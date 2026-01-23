@@ -26,6 +26,6 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push backend image
-  run: |
-    docker compose build
-    docker compose push
+        run: |
+          docker compose build
+          docker compose push
