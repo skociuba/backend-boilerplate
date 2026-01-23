@@ -8,22 +8,23 @@ services:
       POSTGRES_PASSWORD: mypassword
       POSTGRES_DB: mydb
     ports:
-      - "5433:5432"   # OK – tylko do debugowania
+      - "5433:5432"  # do testów lokalnie
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./sql:/docker-entrypoint-initdb.d
-    container_name: my_postgres_db
+    # Nie trzeba pushować oficjalnego postgres, pulluje się na serwerze
 
   app:
     build:
       context: .
+      dockerfile: Dockerfile.prod
+    image: sebastiankociuba/node-backend:latest  # 🔑 potrzebne dla docker-compose push
     environment:
       DATABASE_URL: postgres://myuser:mypassword@db:5432/mydb
     ports:
-      - "3001:3000"   # 🔥 KLUCZOWA ZMIANA
+      - "3001:3000"
     depends_on:
       - db
-    container_name: my_express_app
 
 volumes:
   db-data:
