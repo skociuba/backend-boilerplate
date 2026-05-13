@@ -52,10 +52,10 @@ class UserController {
   public async updateUser(req: Request, res: Response): Promise<void> {
     try {
       const id = parseInt(req.params.id);
-      const { email } = req.body;
+      const { email, name } = req.body;
       const result = await pool.query(
-        "UPDATE users SET email = $1 WHERE id = $2",
-        [email, id]
+        "UPDATE users SET email = $1, name = $2 WHERE id = $3",
+        [email, name, id]
       );
       res.status(200).json({ message: "User updated successfully" });
     } catch (error) {
