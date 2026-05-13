@@ -2,29 +2,29 @@ version: '3'
 
 services:
   db:
-    image: postgres:15
+    image: postgres:15    # jest gotowy image z  dockerhub
     environment:
-      POSTGRES_USER: myuser
+      POSTGRES_USER: myuser      # parametry wzięte z pliku db.ts (tam powinniśmy podstawić zmienne środowiskowe)
       POSTGRES_PASSWORD: mypassword
       POSTGRES_DB: mydb
     ports:
-      - "5433:5432"  # do testów lokalnie
+      - "5433:5432"  # Prawa strona (:5432): To port „wewnątrz” kontenera. PostgreSQL zawsze tam jest i tego nie zmieniamy. Lewa strona zmieniam na 5433 bo jak zostaniesz na5432 to lokalnie gdy postgres jest zainstalowany to używa tego portu i chcąc odpalić tą bazę danych to dostaniesz zwrotkę że jest już na tym porcie jeżeli chcesz następny projekt to użyj portu 5434
     volumes:
-      - db-data:/var/lib/postgresql/data
-      - ./sql:/docker-entrypoint-initdb.d
-    # Nie trzeba pushować oficjalnego postgres, pulluje się na serwerze
+      - db-data:/var/lib/postgresql/data     # prawe strony na sztywno
+      - ./sql:/docker-entrypoint-initdb.d     #lewe strony zależą od volumes:db-data: a ./sql bo tak nazywa się folder w projekcie i możesz to zmieniać,
+
 
   app:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    image: sebastiankociuba/node-backend:latest  # 🔑 potrzebne dla docker-compose push
+    image: sebastiankociuba/node-backend:latest
     environment:
-      DATABASE_URL: postgres://myuser:mypassword@db:5432/mydb
+      DATABASE_URL: postgres://myuser:mypassword@db:5432/mydb   # dane z pliku db.ts a db to serwis z góry
     ports:
       - "3001:3000"
-    depends_on:
+    depends_on:    # info że app zależy od serwisu db, najpierw zbuduj db a potem app
       - db
 
 volumes:
-  db-data:
+  db-data:   # nazwa wolumenu
