@@ -2,29 +2,31 @@ version: '3'
 
 services:
   db:
-    image: postgres:15    # jest gotowy image z  dockerhub
+    image: postgres:15    # jest gotowy image z dockerhub
     environment:
-      POSTGRES_USER: myuser      # parametry wzięte z pliku db.ts (tam powinniśmy podstawić zmienne środowiskowe)
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: mydb
-    ports:
-      - "5433:5432"  # Prawa strona (:5432): To port „wewnątrz” kontenera. PostgreSQL zawsze tam jest i tego nie zmieniamy. Lewa strona zmieniam na 5433 bo jak zostaniesz na5432 to lokalnie gdy postgres jest zainstalowany to używa tego portu i chcąc odpalić tą bazę danych to dostaniesz zwrotkę że jest już na tym porcie jeżeli chcesz następny projekt to użyj portu 5434
+      POSTGRES_USER: ${POSTGRES_USER}           # wartości czytane z pliku .env (nie commitujemy haseł do repo)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - db-data:/var/lib/postgresql/data     # prawe strony na sztywno
-      - ./sql:/docker-entrypoint-initdb.d     #lewe strony zależą od volumes:db-data: a ./sql bo tak nazywa się folder w projekcie i możesz to zmieniać,
-
+      - db-data:/var/lib/postgresql/data        # prawe strony na sztywno
+      - ./sql:/docker-entrypoint-initdb.d       # lewe strony zależą od volumes:db-data: a ./sql bo tak nazywa się folder w projekcie i możesz to zmieniać
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}   # czeka aż postgres faktycznie akceptuje połączenia, nie tylko że kontener się uruchomił
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
-    image: sebastiankociuba/node-backend:latest
+    image: sebastiankociuba/node-backend:latest   # obraz z Docker Hub, budowany przez GitHub Actions
     environment:
-      DATABASE_URL: postgres://myuser:mypassword@db:5432/mydb   # dane z pliku db.ts a db to serwis z góry
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}   # db to nazwa serwisu powyżej
     ports:
-      - "3001:3000"
-    depends_on:    # info że app zależy od serwisu db, najpierw zbuduj db a potem app
-      - db
+      - “3001:3000”   # lewa: port na hoście/VPS, prawa: port wewnątrz kontenera
+    depends_on:
+      db:
+        condition: service_healthy   # app startuje dopiero gdy healthcheck bazy przejdzie
 
 volumes:
-  db-data:   # nazwa wolumenu
+  db-data:   # nazwa wolumenu - dane bazy przeżywają restart kontenerów
