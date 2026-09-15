@@ -7,7 +7,9 @@ import userProfileRoutes from "./routes/userProfile.routes";
 import { attachCurrentUser } from "./middleware/currentUser";
 
 const app = express();
-const port = 3000;
+// Konfigurowalny port — żeby dało się odpalić kilka branchy naraz (np.
+// przez git worktree) obok siebie, każdy na swoim porcie, bez edycji kodu.
+const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 app.use(express.json());
 app.use(attachCurrentUser);
