@@ -81,7 +81,7 @@ class UserProfileController {
       // przy modelu user_profiles), więc P2039 to ogólny kod Prismy
       // ("nieznany błąd bazy"), a prawdziwy kod Postgresa (23514) trzeba
       // wyciągnąć z error.meta.driverAdapterError.cause.code — sprawdzone
-      // naocznie przez scripts/prisma-error-shape.ts, nie zgadnięte z dokumentacji
+      // naocznie (console.log całego error), nie zgadnięte z dokumentacji
       const err = error as {
         code?: string;
         message: string;
