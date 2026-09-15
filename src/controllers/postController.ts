@@ -1,37 +1,54 @@
 import { Request, Response } from "express";
-import pool from "../db";
+import prisma from "../db";
+import { Prisma } from "../generated/prisma/client";
+
+const isNotFoundError = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2025";
+
+// Introspekcja dała nam JAWNĄ tabelę pośrednią (post_tags), więc Prisma
+// zwraca tagi zagnieżdżone: post.post_tags[].tags.name — nie płasko jak w
+// naszym ręcznym json_agg. Ta funkcja mapuje kształt Prismy z powrotem na
+// kształt, jakiego oczekuje już istniejący frontend (author_id/author_name
+// + płaska tablica tags: {id, name}[]) — ORM nie musi dyktować kształtu API.
+type PostWithRelations = Prisma.postsGetPayload<{
+  include: { users: true; post_tags: { include: { tags: true } } };
+}>;
+
+const toApiShape = (post: PostWithRelations) => ({
+  id: post.id,
+  title: post.title,
+  content: post.content,
+  created_at: post.created_at,
+  author_id: post.users.id,
+  author_name: post.users.name,
+  tags: post.post_tags.map((postTag) => ({
+    id: postTag.tags.id,
+    name: postTag.tags.name,
+  })),
+});
 
 // Wspólny check własności — zwraca null gdy post nie istnieje, inaczej jego
 // user_id. Zwykła funkcja modułowa (nie metoda klasy!), bo metody kontrolera
-// są w routach przekazywane jako gołe referencje (np. postController.updatePost,
-// patrz post.routes.ts) bez .bind() — wewnątrz nich "this" jest undefined.
+// są w routach przekazywane jako gołe referencje bez .bind() — wewnątrz
+// nich "this" jest undefined.
 const getPostOwnerId = async (postId: number): Promise<number | null> => {
-  const result = await pool.query(`SELECT user_id FROM posts WHERE id = $1`, [
-    postId,
-  ]);
-  return result.rows.length ? result.rows[0].user_id : null;
+  const post = await prisma.posts.findUnique({
+    where: { id: postId },
+    select: { user_id: true },
+  });
+  return post?.user_id ?? null;
 };
 
 class PostController {
   // GET /posts — lista wszystkich postów wraz z autorem (1:N) i tagami (N:M)
   public async getIndex(req: Request, res: Response): Promise<void> {
     try {
-      const result = await pool.query(
-        `SELECT p.id, p.title, p.content, p.created_at,
-                u.id AS author_id, u.name AS author_name,
-                COALESCE(
-                  json_agg(json_build_object('id', t.id, 'name', t.name))
-                    FILTER (WHERE t.id IS NOT NULL),
-                  '[]'
-                ) AS tags
-         FROM posts p
-         JOIN users u ON u.id = p.user_id
-         LEFT JOIN post_tags pt ON pt.post_id = p.id
-         LEFT JOIN tags t ON t.id = pt.tag_id
-         GROUP BY p.id, u.id
-         ORDER BY p.created_at DESC`
-      );
-      res.status(200).json(result.rows);
+      const posts = await prisma.posts.findMany({
+        include: { users: true, post_tags: { include: { tags: true } } },
+        orderBy: { created_at: "desc" },
+      });
+      res.status(200).json(posts.map(toApiShape));
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -42,14 +59,12 @@ class PostController {
   public async getByUserId(req: Request, res: Response): Promise<void> {
     try {
       const userId = parseInt(req.params.id);
-      const result = await pool.query(
-        `SELECT id, title, content, created_at
-         FROM posts
-         WHERE user_id = $1
-         ORDER BY created_at DESC`,
-        [userId]
-      );
-      res.status(200).json(result.rows);
+      const posts = await prisma.posts.findMany({
+        where: { user_id: userId },
+        select: { id: true, title: true, content: true, created_at: true },
+        orderBy: { created_at: "desc" },
+      });
+      res.status(200).json(posts);
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -60,29 +75,17 @@ class PostController {
   public async getById(req: Request, res: Response): Promise<void> {
     try {
       const id = parseInt(req.params.id);
-      const result = await pool.query(
-        `SELECT p.id, p.title, p.content, p.created_at,
-                u.id AS author_id, u.name AS author_name,
-                COALESCE(
-                  json_agg(json_build_object('id', t.id, 'name', t.name))
-                    FILTER (WHERE t.id IS NOT NULL),
-                  '[]'
-                ) AS tags
-         FROM posts p
-         JOIN users u ON u.id = p.user_id
-         LEFT JOIN post_tags pt ON pt.post_id = p.id
-         LEFT JOIN tags t ON t.id = pt.tag_id
-         WHERE p.id = $1
-         GROUP BY p.id, u.id`,
-        [id]
-      );
+      const post = await prisma.posts.findUnique({
+        where: { id },
+        include: { users: true, post_tags: { include: { tags: true } } },
+      });
 
-      if (result.rows.length === 0) {
+      if (!post) {
         res.status(404).json({ error: "Post not found" });
         return;
       }
 
-      res.status(200).json(result.rows[0]);
+      res.status(200).json(toApiShape(post));
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -90,18 +93,18 @@ class PostController {
   }
 
   // POST /posts — wymaga requireCurrentUser; autorem jest ZAWSZE ten, kto
-  // jest zalogowany (req.currentUserId), nigdy pole z body. Gdyby user_id
-  // przychodziło z body, każdy mógłby publikować posty jako ktoś inny.
+  // jest zalogowany (req.currentUserId), nigdy pole z body.
   public async createPost(req: Request, res: Response): Promise<void> {
     try {
       const { title, content } = req.body;
-      const result = await pool.query(
-        `INSERT INTO posts (user_id, title, content)
-         VALUES ($1, $2, $3)
-         RETURNING *`,
-        [req.currentUserId, title, content]
-      );
-      res.status(201).json(result.rows[0]);
+      const post = await prisma.posts.create({
+        data: {
+          user_id: req.currentUserId as number,
+          title,
+          content,
+        },
+      });
+      res.status(201).json(post);
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -127,19 +130,20 @@ class PostController {
       }
 
       const { title, content } = req.body;
-      const result = await pool.query(
-        `UPDATE posts SET title = $1, content = $2 WHERE id = $3 RETURNING *`,
-        [title, content, id]
-      );
+      const post = await prisma.posts.update({
+        where: { id },
+        data: { title, content },
+      });
 
-      res.status(200).json(result.rows[0]);
+      res.status(200).json(post);
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
     }
   }
 
-  // DELETE /posts/:id — jw.; kasuje też wiersze w post_tags (ON DELETE CASCADE)
+  // DELETE /posts/:id — jw.; kasuje też wiersze w post_tags (ON DELETE
+  // CASCADE zdefiniowany w bazie — Prisma nic tu dodatkowo nie robi)
   public async deletePost(req: Request, res: Response): Promise<void> {
     try {
       const id = parseInt(req.params.id);
@@ -157,7 +161,7 @@ class PostController {
         return;
       }
 
-      await pool.query(`DELETE FROM posts WHERE id = $1`, [id]);
+      await prisma.posts.delete({ where: { id } });
       res.status(200).json({ message: "Post deleted successfully" });
     } catch (error) {
       console.error(error);
@@ -166,9 +170,9 @@ class PostController {
   }
 
   // PUT /posts/:id/tags  { names: string[] } — USTAWIA cały zestaw tagów
-  // posta na raz (idempotentne "od teraz post ma dokładnie te tagi"),
-  // zamiast osobnych "dodaj jeden"/"usuń jeden". Pasuje 1:1 do multi-selecta
-  // z checkboxami na froncie: submit zawsze wysyła pełną, aktualną listę.
+  // posta na raz. Transakcja: wyczyść powiązania, znajdź-lub-stwórz każdy
+  // tag, wstaw powiązania na nowo (skipDuplicates zamiast ON CONFLICT DO
+  // NOTHING — na wypadek zduplikowanej nazwy w przesłanej liście).
   public async setTags(req: Request, res: Response): Promise<void> {
     const postId = parseInt(req.params.id);
     const ownerId = await getPostOwnerId(postId);
@@ -185,48 +189,30 @@ class PostController {
       return;
     }
 
-    const client = await pool.connect();
     try {
       const names: string[] = Array.isArray(req.body.names)
         ? req.body.names
         : [];
 
-      await client.query("BEGIN");
+      await prisma.$transaction(async (tx) => {
+        await tx.post_tags.deleteMany({ where: { post_id: postId } });
 
-      // najprościej: wyczyść wszystkie powiązania tego posta i zbuduj je
-      // od nowa z przesłanej listy — nie trzeba osobno liczyć różnicy
-      // (co dodać, co usunąć), a transakcja gwarantuje że nikt nie zobaczy
-      // pośredniego, "pustego" stanu
-      await client.query(`DELETE FROM post_tags WHERE post_id = $1`, [
-        postId,
-      ]);
-
-      for (const name of names) {
-        // find-or-create po nazwie — ON CONFLICT DO UPDATE (zamiast DO
-        // NOTHING) tylko po to, żeby RETURNING zawsze zwróciło id
-        const tagResult = await client.query(
-          `INSERT INTO tags (name) VALUES ($1)
-           ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-           RETURNING id`,
-          [name]
+        const tags = await Promise.all(
+          names.map((name) =>
+            tx.tags.upsert({ where: { name }, update: {}, create: { name } })
+          )
         );
-        const tagId = tagResult.rows[0].id;
 
-        await client.query(
-          `INSERT INTO post_tags (post_id, tag_id) VALUES ($1, $2)
-           ON CONFLICT DO NOTHING`,
-          [postId, tagId]
-        );
-      }
+        await tx.post_tags.createMany({
+          data: tags.map((tag) => ({ post_id: postId, tag_id: tag.id })),
+          skipDuplicates: true,
+        });
+      });
 
-      await client.query("COMMIT");
       res.status(200).json({ message: "Tags updated", tags: names });
     } catch (error) {
-      await client.query("ROLLBACK");
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
-    } finally {
-      client.release();
     }
   }
 }

@@ -1,5 +1,18 @@
 import { Request, Response } from "express";
-import pool from "../db";
+import prisma from "../db";
+import { Prisma } from "../generated/prisma/client";
+
+const isNotFoundError = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2025";
+
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2002";
+
+const isForeignKeyViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2003";
 
 class UserProfileController {
   // GET /users/:id/profile — profil to dane prywatne (PESEL, telefon), więc
@@ -16,17 +29,16 @@ class UserProfileController {
         return;
       }
 
-      const result = await pool.query(
-        `SELECT * FROM user_profiles WHERE user_id = $1`,
-        [userId]
-      );
+      const profile = await prisma.user_profiles.findUnique({
+        where: { user_id: userId },
+      });
 
-      if (result.rows.length === 0) {
+      if (!profile) {
         res.status(404).json({ error: "Profile not found" });
         return;
       }
 
-      res.status(200).json(result.rows[0]);
+      res.status(200).json(profile);
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -34,7 +46,9 @@ class UserProfileController {
   }
 
   // PUT /users/:id/profile — upsert: relacja jest 1:1, więc "zapisz profil"
-  // znaczy "stwórz, albo nadpisz jeśli już istnieje" w jednym zapytaniu
+  // znaczy "stwórz, albo nadpisz jeśli już istnieje" w jednym zapytaniu.
+  // Prisma ma to jako natywną operację .upsert() — nie trzeba ręcznego
+  // ON CONFLICT.
   public async upsert(req: Request, res: Response): Promise<void> {
     try {
       const userId = parseInt(req.params.id);
@@ -49,44 +63,53 @@ class UserProfileController {
 
       const { pesel, date_of_birth, phone } = req.body;
 
-      const result = await pool.query(
-        `INSERT INTO user_profiles (user_id, pesel, date_of_birth, phone)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id) DO UPDATE
-           SET pesel = EXCLUDED.pesel,
-               date_of_birth = EXCLUDED.date_of_birth,
-               phone = EXCLUDED.phone
-         RETURNING *`,
-        [userId, pesel, date_of_birth, phone]
-      );
+      const profile = await prisma.user_profiles.upsert({
+        where: { user_id: userId },
+        update: { pesel, date_of_birth: new Date(date_of_birth), phone },
+        create: {
+          user_id: userId,
+          pesel,
+          date_of_birth: new Date(date_of_birth),
+          phone,
+        },
+      });
 
-      res.status(200).json(result.rows[0]);
+      res.status(200).json(profile);
     } catch (error) {
-      const err = error as { code?: string; message: string };
-      // 22007 = invalid_datetime_format, 22008 = datetime_field_overflow —
-      // oba dostajemy np. dla "19.03.1983" zamiast "1983-03-19" (Postgres
-      // nie rozpoznaje kolejności dzień.miesiąc.rok bez zmiany "datestyle")
-      // 23514 = check_violation — format peselu z migracji (11 cyfr)
-      // 23505 = unique_violation — pesel już przypisany innemu userowi
-      // 23503 = foreign_key_violation — nie ma usera o takim id
-      if (err.code === "22007" || err.code === "22008") {
+      // 23514 (check_violation na PESEL) nie jest "znanym" błędem dla
+      // Prismy — CHECK nie jest częścią schema.prisma (patrz komentarz
+      // przy modelu user_profiles), więc P2039 to ogólny kod Prismy
+      // ("nieznany błąd bazy"), a prawdziwy kod Postgresa (23514) trzeba
+      // wyciągnąć z error.meta.driverAdapterError.cause.code — sprawdzone
+      // naocznie przez scripts/prisma-error-shape.ts, nie zgadnięte z dokumentacji
+      const err = error as {
+        code?: string;
+        message: string;
+        meta?: {
+          driverAdapterError?: { cause?: { code?: string } };
+        };
+      };
+      const pgCode = err.meta?.driverAdapterError?.cause?.code;
+
+      if (isUniqueViolation(error)) {
+        res.status(409).json({ error: "PESEL already used by another user" });
+        return;
+      }
+      if (isForeignKeyViolation(error)) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      if (pgCode === "23514") {
+        res.status(400).json({ error: "PESEL must be exactly 11 digits" });
+        return;
+      }
+      if (pgCode === "22007" || pgCode === "22008") {
         res
           .status(400)
           .json({ error: "date_of_birth must be in YYYY-MM-DD format" });
         return;
       }
-      if (err.code === "23514") {
-        res.status(400).json({ error: "PESEL must be exactly 11 digits" });
-        return;
-      }
-      if (err.code === "23505") {
-        res.status(409).json({ error: "PESEL already used by another user" });
-        return;
-      }
-      if (err.code === "23503") {
-        res.status(404).json({ error: "User not found" });
-        return;
-      }
+
       console.error(error);
       res.status(500).json({ error: err.message });
     }
@@ -105,18 +128,13 @@ class UserProfileController {
         return;
       }
 
-      const result = await pool.query(
-        `DELETE FROM user_profiles WHERE user_id = $1`,
-        [userId]
-      );
-
-      if (result.rowCount === 0) {
+      await prisma.user_profiles.delete({ where: { user_id: userId } });
+      res.status(200).json({ message: "Profile deleted successfully" });
+    } catch (error) {
+      if (isNotFoundError(error)) {
         res.status(404).json({ error: "Profile not found" });
         return;
       }
-
-      res.status(200).json({ message: "Profile deleted successfully" });
-    } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
     }

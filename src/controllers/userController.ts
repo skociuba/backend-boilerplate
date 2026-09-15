@@ -1,16 +1,21 @@
 import { Request, Response } from "express";
-import pool from "../db";
-import { QueryResult } from "pg";
+import prisma from "../db";
+import { Prisma } from "../generated/prisma/client";
 
-// https://node-postgres.com/features/queries
+// Prisma nie rzuca "SQL error" na chybił trafił — dla znanych sytuacji
+// (naruszenie ograniczenia, brak rekordu...) rzuca PrismaClientKnownRequestError
+// z konkretnym kodem. P2025 = "Record to update/delete does not exist" —
+// czego stary, ręczny SQL (UPDATE/DELETE bez sprawdzenia rowCount) w ogóle
+// nie wykrywał: zwracał 200 "updated successfully" nawet dla nieistniejącego id.
+const isNotFoundError = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2025";
+
 class UserController {
   public async getIndex(req: Request, res: Response): Promise<void> {
     try {
-      const result = await pool.query("SELECT * FROM users");
-
-      console.log({ result: JSON.stringify(result) });
-
-      res.status(200).json(result.rows);
+      const users = await prisma.users.findMany();
+      res.status(200).json(users);
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -20,16 +25,10 @@ class UserController {
   public async createUser(req: Request, res: Response): Promise<void> {
     try {
       const { name, email } = req.body;
-      const result = await pool.query(
-        "INSERT INTO users (name, email) VALUES ($1, $2)",
-        [name, email]
-      );
-
-      console.log({ result: JSON.stringify(result) });
-
-      res
-        .status(200)
-        .json({ message: "User added successfully", user: result.rows[0] });
+      // .create() zawsze zwraca utworzony wiersz — stary raw SQL robił
+      // INSERT bez RETURNING, więc "user" w odpowiedzi zawsze było undefined
+      const user = await prisma.users.create({ data: { name, email } });
+      res.status(200).json({ message: "User added successfully", user });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -39,10 +38,10 @@ class UserController {
   public async getUserById(req: Request, res: Response): Promise<void> {
     try {
       const id = parseInt(req.params.id);
-      const result = await pool.query("SELECT * FROM users WHERE id = $1", [
-        id,
-      ]);
-      res.status(200).json(result.rows);
+      const user = await prisma.users.findUnique({ where: { id } });
+      // findUnique zwraca pojedynczy obiekt albo null — zawijamy w tablicę,
+      // bo istniejący frontend (osobne repo) oczekuje tablicy z tego endpointu
+      res.status(200).json(user ? [user] : []);
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
@@ -53,12 +52,13 @@ class UserController {
     try {
       const id = parseInt(req.params.id);
       const { email, name } = req.body;
-      const result = await pool.query(
-        "UPDATE users SET email = $1, name = $2 WHERE id = $3",
-        [email, name, id]
-      );
+      await prisma.users.update({ where: { id }, data: { email, name } });
       res.status(200).json({ message: "User updated successfully" });
     } catch (error) {
+      if (isNotFoundError(error)) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
     }
@@ -67,42 +67,37 @@ class UserController {
   public async deleteUser(req: Request, res: Response): Promise<void> {
     try {
       const id = parseInt(req.params.id);
-      const result = await pool.query("DELETE FROM users WHERE id = $1", [id]);
+      await prisma.users.delete({ where: { id } });
       res.status(200).json({ message: "User deleted successfully" });
     } catch (error) {
+      if (isNotFoundError(error)) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
     }
   }
 
-  //https://node-postgres.com/features/transactions
+  // https://www.prisma.io/docs/orm/prisma-client/queries/transactions —
+  // odpowiednik ręcznego BEGIN/Promise.all/COMMIT: $transaction albo się
+  // uda w całości, albo nic się nie zapisze
   public async createUserTransaction(
     req: Request,
     res: Response
   ): Promise<void> {
-    const client = await pool.connect();
-
     try {
-      await client.query("BEGIN");
-      const users = req.body.users;
-      const promises: Promise<QueryResult<any>>[] = [];
-      for (const user of users) {
-        const { name, email } = user;
-        promises.push(
-          client.query("INSERT INTO users (name, email) VALUES ($1, $2)", [
-            name,
-            email,
-          ])
-        );
-      }
-
-      await Promise.all(promises);
-
-      await client.query("COMMIT");
+      const users: { name: string; email: string }[] = req.body.users;
+      await prisma.$transaction(
+        users.map((user) =>
+          prisma.users.create({
+            data: { name: user.name, email: user.email },
+          })
+        )
+      );
       res.status(200).json({ message: "Users added successfully" });
     } catch (error) {
       console.error(error);
-      await client.query("ROLLBACK");
       res.status(500).json({ error: (error as Error).message });
     }
   }
