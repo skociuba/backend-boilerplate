@@ -7,13 +7,18 @@
     "start": "ts-node src/index.ts",
     "build": "tsc",
     "serve": "node dist/index.js",
-    "test": "jest"
+    "test": "jest",
+    "migrate:create": "node -r dotenv/config node_modules/.bin/node-pg-migrate create",
+    "migrate:up": "node -r dotenv/config node_modules/.bin/node-pg-migrate up",
+    "migrate:down": "node -r dotenv/config node_modules/.bin/node-pg-migrate down"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^17.4.2",
     "express": "^4.21.0",
+    "node-pg-migrate": "^9.0.0",
     "pg": "^8.13.0"
   },
   "devDependencies": {

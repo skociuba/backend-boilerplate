@@ -9,7 +9,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - db-data:/var/lib/postgresql/data        # prawe strony na sztywno
-      - ./sql:/docker-entrypoint-initdb.d       # lewe strony zależą od volumes:db-data: a ./sql bo tak nazywa się folder w projekcie i możesz to zmieniać
+      # Schemat od teraz tworzą migracje (npm run migrate:up), nie initdb.d —
+      # initdb.d wykonuje się tylko raz, przy pierwszym starcie na pustym
+      # wolumenie, więc nie nadaje się do wprowadzania kolejnych zmian schematu.
     healthcheck:
       test:
         - CMD-SHELL
