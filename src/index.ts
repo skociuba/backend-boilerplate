@@ -4,6 +4,7 @@ import userRoutes from "./routes/user.routes";
 import postRoutes from "./routes/post.routes";
 import tagRoutes from "./routes/tag.routes";
 import userProfileRoutes from "./routes/userProfile.routes";
+import childRoutes from "./routes/child.routes";
 import { attachCurrentUser } from "./middleware/currentUser";
 
 const app = express();
@@ -18,6 +19,7 @@ app.use(userRoutes);
 app.use(postRoutes);
 app.use(tagRoutes);
 app.use(userProfileRoutes);
+app.use(childRoutes);
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

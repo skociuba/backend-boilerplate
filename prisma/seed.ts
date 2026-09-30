@@ -79,6 +79,37 @@ async function main() {
     console.log("Posty już istnieją — pomijam (uruchom migrate reset, żeby zacząć od zera).");
   }
 
+  // children — do ćwiczenia paginacji/sortowania/filtrowania. Tak jak przy
+  // postach: brak naturalnego klucza biznesowego, więc idempotencja przez
+  // sprawdzenie licznika zamiast upsert. 12 wierszy, rozstrzelone wieki i
+  // dwóch różnych rodziców — celowo dwa "Ala", żeby dało się przetestować
+  // filtr ?name=ala zwracający więcej niż jeden wynik.
+  const childrenAlreadySeeded = await prisma.children.count({
+    where: { user_id: alice.id },
+  });
+
+  if (childrenAlreadySeeded === 0) {
+    await prisma.children.createMany({
+      data: [
+        { user_id: alice.id, name: "Ala", age: 5, date_of_birth: new Date("2021-03-01"), notes: "lubi rysować" },
+        { user_id: bob.id, name: "Bartek", age: 8, date_of_birth: new Date("2018-02-01") },
+        { user_id: alice.id, name: "Celina", age: 3, date_of_birth: new Date("2023-06-01") },
+        { user_id: bob.id, name: "Damian", age: 12, date_of_birth: new Date("2014-01-01") },
+        { user_id: alice.id, name: "Ela", age: 7, date_of_birth: new Date("2019-05-01") },
+        { user_id: bob.id, name: "Filip", age: 9, date_of_birth: new Date("2017-08-01") },
+        { user_id: alice.id, name: "Gala", age: 2, date_of_birth: new Date("2024-01-01") },
+        { user_id: bob.id, name: "Hela", age: 6, date_of_birth: new Date("2020-01-01") },
+        { user_id: alice.id, name: "Igor", age: 10, date_of_birth: new Date("2016-01-01") },
+        { user_id: bob.id, name: "Jula", age: 4, date_of_birth: new Date("2022-01-01") },
+        { user_id: alice.id, name: "Kamil", age: 11, date_of_birth: new Date("2015-01-01") },
+        { user_id: bob.id, name: "Ala", age: 1, date_of_birth: new Date("2025-01-01") },
+      ],
+    });
+    console.log("Utworzono 12 przykładowych dzieci (do testów paginacji).");
+  } else {
+    console.log("Dzieci już istnieją — pomijam.");
+  }
+
   console.log({ alice, bob });
 }
 
