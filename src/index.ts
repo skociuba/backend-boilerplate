@@ -1,10 +1,12 @@
 import "dotenv/config";
 import express from "express";
+import cookieParser from "cookie-parser";
 import userRoutes from "./routes/user.routes";
 import postRoutes from "./routes/post.routes";
 import tagRoutes from "./routes/tag.routes";
 import userProfileRoutes from "./routes/userProfile.routes";
 import childRoutes from "./routes/child.routes";
+import authRoutes from "./routes/auth.routes";
 import { attachCurrentUser } from "./middleware/currentUser";
 
 const app = express();
@@ -13,8 +15,12 @@ const app = express();
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 app.use(express.json());
+// req.cookies — potrzebne przed attachCurrentUser/authRoutes, bo refresh
+// token teraz przyjeżdża jako httpOnly cookie, nie w body
+app.use(cookieParser());
 app.use(attachCurrentUser);
 
+app.use(authRoutes);
 app.use(userRoutes);
 app.use(postRoutes);
 app.use(tagRoutes);

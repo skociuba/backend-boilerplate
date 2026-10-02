@@ -51,16 +51,11 @@ class ChildController {
   // nie duplikuje itemów w żaden sposób.
   public async getIndex(req: Request, res: Response): Promise<void> {
     try {
-      // DEBUG tymczasowy — pokazuje dokładnie co serwer dostał, słowo w
-      // słowo, niezależnie od tego co pokazuje UI klienta (Postman/przeglądarka)
-      console.log("GET /children query:", JSON.stringify(req.query));
-
       const rawPage = singleQueryParam(req.query.page);
       const rawLimit = singleQueryParam(req.query.limit);
       const rawSortBy = singleQueryParam(req.query.sortBy);
       const rawOrder = singleQueryParam(req.query.order);
       const rawName = singleQueryParam(req.query.name);
-      const rawUserId = singleQueryParam(req.query.user_id);
       const rawMinAge = singleQueryParam(req.query.minAge);
       const rawMaxAge = singleQueryParam(req.query.maxAge);
 
@@ -80,17 +75,19 @@ class ChildController {
       const order: "asc" | "desc" = rawOrder === "desc" ? "desc" : "asc";
 
       // filtrowanie — budujemy warunek WHERE tylko z parametrów, które
-      // faktycznie przyszły w query; brak parametru = brak filtra
-      const where: Prisma.childrenWhereInput = {};
+      // faktycznie przyszły w query; brak parametru = brak filtra.
+      // user_id NIE jest parametrem query — to "moje dzieci", więc zakres
+      // wymusza sam backend z req.currentUserId, nie da się go rozszerzyć
+      // przez query string na cudze dzieci.
+      const where: Prisma.childrenWhereInput = {
+        user_id: req.currentUserId as number,
+      };
 
       if (rawName) {
         where.name = {
           contains: rawName,
           mode: "insensitive", // "Ala" znajdzie też "ala", "ALA"
         };
-      }
-      if (rawUserId) {
-        where.user_id = parseInt(rawUserId);
       }
       if (rawMinAge || rawMaxAge) {
         where.age = {

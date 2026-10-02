@@ -24,7 +24,12 @@ postRoutes.put(
   postController.setTags
 );
 
-// strona "N" relacji 1:N widziana od usera
-postRoutes.get("/users/:id/posts", postController.getByUserId);
+// strona "N" relacji 1:N widziana od usera — "moje posty", więc wymaga
+// logowania (patrz komentarz przy getByUserId)
+postRoutes.get(
+  "/users/:id/posts",
+  requireCurrentUser,
+  postController.getByUserId
+);
 
 export default postRoutes;

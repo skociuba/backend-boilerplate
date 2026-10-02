@@ -6,22 +6,35 @@
 import "dotenv/config";
 import { PrismaClient } from "./../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { hashPassword } from "../src/lib/password";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // users — upsert po email (unique w schemacie) = bezpieczne do
-  // wielokrotnego odpalania, nie tworzy duplikatów
+  // wielokrotnego odpalania, nie tworzy duplikatów. Hasło ustawiane też
+  // w "update" (nie tylko "create") — żeby ponowne odpalenie seeda
+  // dorzuciło hasło kontom założonym PRZED wprowadzeniem logowania.
+  const alicePasswordHash = await hashPassword("alice123");
+  const bobPasswordHash = await hashPassword("bob123");
+
   const alice = await prisma.users.upsert({
     where: { email: "alice@example.com" },
-    update: {},
-    create: { name: "Alice", email: "alice@example.com" },
+    update: { password_hash: alicePasswordHash },
+    create: { name: "Alice", email: "alice@example.com", password_hash: alicePasswordHash },
   });
+  // Bob — admin, do testowania /users (Alice zostaje zwykłym userem, żeby
+  // dało się od razu sprawdzić oba przypadki: 403 dla Alice, 200 dla Boba)
   const bob = await prisma.users.upsert({
     where: { email: "bob@example.com" },
-    update: {},
-    create: { name: "Bob", email: "bob@example.com" },
+    update: { password_hash: bobPasswordHash, role: "admin" },
+    create: {
+      name: "Bob",
+      email: "bob@example.com",
+      password_hash: bobPasswordHash,
+      role: "admin",
+    },
   });
 
   // user_profiles (1:1) — upsert po user_id, bo to jest PK tej tabeli

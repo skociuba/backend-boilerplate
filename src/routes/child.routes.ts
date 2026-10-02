@@ -5,10 +5,10 @@ import { requireCurrentUser } from "../middleware/currentUser";
 const childRoutes = Router();
 const childController = new ChildController();
 
-// GET publiczne (jak posty) — listing z paginacją/sortowaniem/filtrowaniem
-// nie wymaga logowania. Tworzenie — jak posty — wymaga bycia zalogowanym,
-// autor (user_id) zawsze z req.currentUserId, nigdy z body.
-childRoutes.get("/children", childController.getIndex);
+// "moje dzieci" — GET wymaga logowania i jest zawsze przefiltrowane do
+// req.currentUserId (w kontrolerze), nie tylko dostępne dla zalogowanych.
+// Tworzenie — jak dotąd — autor zawsze z req.currentUserId, nigdy z body.
+childRoutes.get("/children", requireCurrentUser, childController.getIndex);
 childRoutes.post("/children", requireCurrentUser, childController.create);
 
 export default childRoutes;

@@ -11,10 +11,20 @@ const isNotFoundError = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
   error.code === "P2025";
 
+// Bez password_hash — ten endpoint (moduł admina) nie ma powodu go znać,
+// a wysyłanie go na front (nawet zahashowanego) to niepotrzebnie
+// rozszerzona powierzchnia ataku, gdyby kiedyś coś po drodze go zalogowało.
+const PUBLIC_USER_FIELDS = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+} as const;
+
 class UserController {
   public async getIndex(req: Request, res: Response): Promise<void> {
     try {
-      const users = await prisma.users.findMany();
+      const users = await prisma.users.findMany({ select: PUBLIC_USER_FIELDS });
       res.status(200).json(users);
     } catch (error) {
       console.error(error);
@@ -27,7 +37,10 @@ class UserController {
       const { name, email } = req.body;
       // .create() zawsze zwraca utworzony wiersz — stary raw SQL robił
       // INSERT bez RETURNING, więc "user" w odpowiedzi zawsze było undefined
-      const user = await prisma.users.create({ data: { name, email } });
+      const user = await prisma.users.create({
+        data: { name, email },
+        select: PUBLIC_USER_FIELDS,
+      });
       res.status(200).json({ message: "User added successfully", user });
     } catch (error) {
       console.error(error);
@@ -38,7 +51,10 @@ class UserController {
   public async getUserById(req: Request, res: Response): Promise<void> {
     try {
       const id = parseInt(req.params.id);
-      const user = await prisma.users.findUnique({ where: { id } });
+      const user = await prisma.users.findUnique({
+        where: { id },
+        select: PUBLIC_USER_FIELDS,
+      });
       // findUnique zwraca pojedynczy obiekt albo null — zawijamy w tablicę,
       // bo istniejący frontend (osobne repo) oczekuje tablicy z tego endpointu
       res.status(200).json(user ? [user] : []);

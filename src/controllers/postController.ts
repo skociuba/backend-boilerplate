@@ -55,16 +55,32 @@ class PostController {
     }
   }
 
-  // GET /users/:id/posts — strona "N" relacji 1:N widziana od strony usera
+  // GET /users/:id/posts — "moje posty", naprawdę wymuszone przez backend,
+  // nie tylko przez to, jakie ID wyśle frontend. Dwie warstwy:
+  // 1) requireCurrentUser (routes) — bez ważnego access tokenu w ogóle się
+  //    tu nie wejdzie (401). To dzięki temu wygasły token realnie coś psuje
+  //    i wyzwala cichy refresh po stronie frontu — wcześniej ten endpoint
+  //    był publiczny, więc martwy token nikomu nie przeszkadzał.
+  // 2) porównanie :id z req.currentUserId (niżej) — zalogowany, ale próbujący
+  //    zajrzeć w cudze posty, dostaje 403, nie cudze dane.
   public async getByUserId(req: Request, res: Response): Promise<void> {
     try {
       const userId = parseInt(req.params.id);
+
+      if (userId !== req.currentUserId) {
+        res.status(403).json({
+          error: "Forbidden",
+          message: "Możesz przeglądać tylko własne posty.",
+        });
+        return;
+      }
+
       const posts = await prisma.posts.findMany({
         where: { user_id: userId },
-        select: { id: true, title: true, content: true, created_at: true },
+        include: { users: true, post_tags: { include: { tags: true } } },
         orderBy: { created_at: "desc" },
       });
-      res.status(200).json(posts);
+      res.status(200).json(posts.map(toApiShape));
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });
