@@ -48,20 +48,12 @@ const issueTokenPair = async (
 };
 
 class AuthController {
-  // POST /auth/register { name, email, password }
+  // POST /auth/register { name, email, password } — kształt i poprawność
+  // (email.email(), password min. 8 znaków) sprawdzone już WCZEŚNIEJ przez
+  // validateBody(registerSchema) w routach; tu req.body jest już zaufane.
   public async register(req: Request, res: Response): Promise<void> {
     try {
       const { name, email, password } = req.body;
-
-      if (!name || !email || !password) {
-        res.status(400).json({ error: "name, email i password są wymagane" });
-        return;
-      }
-      if (password.length < 8) {
-        res.status(400).json({ error: "Hasło musi mieć minimum 8 znaków" });
-        return;
-      }
-
       const password_hash = await hashPassword(password);
       const user = await prisma.users.create({
         data: { name, email, password_hash },
@@ -211,6 +203,28 @@ class AuthController {
       }
       clearRefreshCookie(res);
       res.status(200).json({ message: "Wylogowano" });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  }
+
+  // POST /auth/logout-all — wymaga requireCurrentUser (musisz mieć ważny
+  // access token, żeby powiedzieć "zakończ WSZYSTKIE moje sesje"). W
+  // odróżnieniu od logout() unieważnia KAŻDY niewygasły refresh token
+  // tego usera, nie tylko ten z bieżącego ciastka — przydatne np. gdy
+  // podejrzewasz, że ktoś inny ma Twój refresh token (zgubiony telefon,
+  // publiczny komputer). Access tokeny innych urządzeń nadal będą działać
+  // do swojego naturalnego wygaśnięcia (do 15 min) — ten sam kompromis co
+  // zawsze przy stateless access tokenach.
+  public async logoutAll(req: Request, res: Response): Promise<void> {
+    try {
+      await prisma.refresh_tokens.updateMany({
+        where: { user_id: req.currentUserId as number, revoked_at: null },
+        data: { revoked_at: new Date() },
+      });
+      clearRefreshCookie(res);
+      res.status(200).json({ message: "Wylogowano ze wszystkich urządzeń" });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: (error as Error).message });

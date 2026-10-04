@@ -34,11 +34,13 @@ class UserController {
 
   public async createUser(req: Request, res: Response): Promise<void> {
     try {
-      const { name, email } = req.body;
+      const { name, email, role } = req.body;
       // .create() zawsze zwraca utworzony wiersz — stary raw SQL robił
-      // INSERT bez RETURNING, więc "user" w odpowiedzi zawsze było undefined
+      // INSERT bez RETURNING, więc "user" w odpowiedzi zawsze było undefined.
+      // role: undefined (nie wysłane) = Prisma stosuje @default(user) ze
+      // schematu, nie trzeba tego osobno obsługiwać.
       const user = await prisma.users.create({
-        data: { name, email },
+        data: { name, email, role },
         select: PUBLIC_USER_FIELDS,
       });
       res.status(200).json({ message: "User added successfully", user });
@@ -67,8 +69,8 @@ class UserController {
   public async updateUser(req: Request, res: Response): Promise<void> {
     try {
       const id = parseInt(req.params.id);
-      const { email, name } = req.body;
-      await prisma.users.update({ where: { id }, data: { email, name } });
+      const { email, name, role } = req.body;
+      await prisma.users.update({ where: { id }, data: { email, name, role } });
       res.status(200).json({ message: "User updated successfully" });
     } catch (error) {
       if (isNotFoundError(error)) {
