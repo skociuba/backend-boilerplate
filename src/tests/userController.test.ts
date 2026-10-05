@@ -25,6 +25,7 @@ describe("UserController", () => {
   let res: Partial<Response>;
   let jsonMock: jest.Mock;
   let statusMock: jest.Mock;
+  let next: jest.Mock;
 
   beforeEach(() => {
     userController = new UserController();
@@ -34,6 +35,13 @@ describe("UserController", () => {
     res = {
       status: statusMock,
     };
+    // Kontrolery są teraz owinięte w asyncHandler (patrz lib/asyncHandler.ts)
+    // i zwracają RequestHandler — Express zawsze wywołuje je z trzema
+    // argumentami, więc testy robią to samo. next nie jest tu nigdy
+    // wywoływany (wszystkie ścieżki w tych testach kończą się sukcesem),
+    // ale musi istnieć, żeby asyncHandler miał gdzie przekazać ewentualny
+    // odrzucony Promise.
+    next = jest.fn();
   });
 
   afterEach(() => {
@@ -44,7 +52,7 @@ describe("UserController", () => {
     const mockUsers = [{ id: 1, name: "John Doe", email: "john@example.com" }];
     (prisma.users.findMany as jest.Mock).mockResolvedValue(mockUsers);
 
-    await userController.getIndex(req as Request, res as Response);
+    await userController.getIndex(req as Request, res as Response, next);
 
     expect(statusMock).toHaveBeenCalledWith(200);
     expect(jsonMock).toHaveBeenCalledWith(mockUsers);
@@ -55,7 +63,7 @@ describe("UserController", () => {
     req.body = { name: "John Doe", email: "john@example.com" };
     (prisma.users.create as jest.Mock).mockResolvedValue(mockUser);
 
-    await userController.createUser(req as Request, res as Response);
+    await userController.createUser(req as Request, res as Response, next);
 
     expect(statusMock).toHaveBeenCalledWith(200);
     expect(jsonMock).toHaveBeenCalledWith({
@@ -69,7 +77,7 @@ describe("UserController", () => {
     req.params = { id: "1" };
     (prisma.users.findUnique as jest.Mock).mockResolvedValue(mockUser);
 
-    await userController.getUserById(req as Request, res as Response);
+    await userController.getUserById(req as Request, res as Response, next);
 
     expect(statusMock).toHaveBeenCalledWith(200);
     expect(jsonMock).toHaveBeenCalledWith([mockUser]);
@@ -80,7 +88,7 @@ describe("UserController", () => {
     req.body = { email: "john.new@example.com" };
     (prisma.users.update as jest.Mock).mockResolvedValue({});
 
-    await userController.updateUser(req as Request, res as Response);
+    await userController.updateUser(req as Request, res as Response, next);
 
     expect(statusMock).toHaveBeenCalledWith(200);
     expect(jsonMock).toHaveBeenCalledWith({
@@ -92,7 +100,7 @@ describe("UserController", () => {
     req.params = { id: "1" };
     (prisma.users.delete as jest.Mock).mockResolvedValue({});
 
-    await userController.deleteUser(req as Request, res as Response);
+    await userController.deleteUser(req as Request, res as Response, next);
 
     expect(statusMock).toHaveBeenCalledWith(200);
     expect(jsonMock).toHaveBeenCalledWith({

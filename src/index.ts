@@ -8,6 +8,7 @@ import userProfileRoutes from "./routes/userProfile.routes";
 import childRoutes from "./routes/child.routes";
 import authRoutes from "./routes/auth.routes";
 import { attachCurrentUser } from "./middleware/currentUser";
+import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
 const app = express();
 // Konfigurowalny port — żeby dało się odpalić kilka branchy naraz (np.
@@ -34,6 +35,15 @@ app.use(postRoutes);
 app.use(tagRoutes);
 app.use(userProfileRoutes);
 app.use(childRoutes);
+
+// Oba MUSZĄ stać na samym końcu łańcucha — Express dochodzi tu tylko jeśli
+// żaden wcześniejszy route nie pasował (notFoundHandler) albo ktoś wcześniej
+// zawołał next(error) (errorHandler, rozpoznawany przez Express po liczbie
+// argumentów: 4, nie 3). Kolejność WZGLĘDEM SIEBIE też ma znaczenie:
+// notFoundHandler pierwszy, żeby zdążył obsłużyć nietrafiony route, zanim
+// cokolwiek zdąży rzucić błąd.
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

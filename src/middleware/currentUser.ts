@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, Role } from "../lib/jwt";
+import { ForbiddenError, UnauthorizedError } from "../lib/errors";
 
 // Docelowa wersja (poprzednio: czytanie surowego nagłówka x-user-id).
 // Cel tego pliku pozostaje ten sam: dostarczyć req.currentUserId (teraz też
@@ -37,15 +38,15 @@ export const attachCurrentUser = (
 // tożsamości, nie brak uprawnień.
 export const requireCurrentUser = (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): void => {
   if (!req.currentUserId) {
-    res.status(401).json({
-      error: "Not authenticated",
-      message:
-        "Musisz być zalogowany (nagłówek Authorization: Bearer <access token>).",
-    });
+    next(
+      new UnauthorizedError(
+        "Musisz być zalogowany (nagłówek Authorization: Bearer <access token>)."
+      )
+    );
     return;
   }
   next();
@@ -56,22 +57,19 @@ export const requireCurrentUser = (
 // solo w routach, bez konieczności dokładania obok requireCurrentUser.
 export const requireAdmin = (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): void => {
   if (!req.currentUserId) {
-    res.status(401).json({
-      error: "Not authenticated",
-      message:
-        "Musisz być zalogowany (nagłówek Authorization: Bearer <access token>).",
-    });
+    next(
+      new UnauthorizedError(
+        "Musisz być zalogowany (nagłówek Authorization: Bearer <access token>)."
+      )
+    );
     return;
   }
   if (req.currentUserRole !== "admin") {
-    res.status(403).json({
-      error: "Forbidden",
-      message: "Ten zasób jest dostępny tylko dla administratorów.",
-    });
+    next(new ForbiddenError("Ten zasób jest dostępny tylko dla administratorów."));
     return;
   }
   next();

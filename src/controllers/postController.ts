@@ -1,10 +1,8 @@
 import { Request, Response } from "express";
 import prisma from "../db";
 import { Prisma } from "../generated/prisma/client";
-
-const isNotFoundError = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  error.code === "P2025";
+import { asyncHandler } from "../lib/asyncHandler";
+import { ForbiddenError, NotFoundError } from "../lib/errors";
 
 // Introspekcja dała nam JAWNĄ tabelę pośrednią (post_tags), więc Prisma
 // zwraca tagi zagnieżdżone: post.post_tags[].tags.name — nie płasko jak w
@@ -40,20 +38,25 @@ const getPostOwnerId = async (postId: number): Promise<number | null> => {
   return post?.user_id ?? null;
 };
 
+// Rzuca 404/403 — dzielone przez update/delete/setTags, które wszystkie
+// zaczynają się od tego samego sprawdzenia "czy to Twój post".
+const requireOwnPost = async (postId: number, currentUserId: number | undefined) => {
+  const ownerId = await getPostOwnerId(postId);
+  if (ownerId === null) throw new NotFoundError("Post not found");
+  if (ownerId !== currentUserId) {
+    throw new ForbiddenError("Możesz edytować tylko własne posty.");
+  }
+};
+
 class PostController {
   // GET /posts — lista wszystkich postów wraz z autorem (1:N) i tagami (N:M)
-  public async getIndex(req: Request, res: Response): Promise<void> {
-    try {
-      const posts = await prisma.posts.findMany({
-        include: { users: true, post_tags: { include: { tags: true } } },
-        orderBy: { created_at: "desc" },
-      });
-      res.status(200).json(posts.map(toApiShape));
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+  public getIndex = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const posts = await prisma.posts.findMany({
+      include: { users: true, post_tags: { include: { tags: true } } },
+      orderBy: { created_at: "desc" },
+    });
+    res.status(200).json(posts.map(toApiShape));
+  });
 
   // GET /users/:id/posts — "moje posty", naprawdę wymuszone przez backend,
   // nie tylko przez to, jakie ID wyśle frontend. Dwie warstwy:
@@ -63,174 +66,99 @@ class PostController {
   //    był publiczny, więc martwy token nikomu nie przeszkadzał.
   // 2) porównanie :id z req.currentUserId (niżej) — zalogowany, ale próbujący
   //    zajrzeć w cudze posty, dostaje 403, nie cudze dane.
-  public async getByUserId(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = parseInt(req.params.id);
+  public getByUserId = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const userId = parseInt(req.params.id);
 
-      if (userId !== req.currentUserId) {
-        res.status(403).json({
-          error: "Forbidden",
-          message: "Możesz przeglądać tylko własne posty.",
-        });
-        return;
-      }
-
-      const posts = await prisma.posts.findMany({
-        where: { user_id: userId },
-        include: { users: true, post_tags: { include: { tags: true } } },
-        orderBy: { created_at: "desc" },
-      });
-      res.status(200).json(posts.map(toApiShape));
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
+    if (userId !== req.currentUserId) {
+      throw new ForbiddenError("Możesz przeglądać tylko własne posty.");
     }
-  }
+
+    const posts = await prisma.posts.findMany({
+      where: { user_id: userId },
+      include: { users: true, post_tags: { include: { tags: true } } },
+      orderBy: { created_at: "desc" },
+    });
+    res.status(200).json(posts.map(toApiShape));
+  });
 
   // GET /posts/:id — post + autor + tagi zagregowane z relacji N:M
-  public async getById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const post = await prisma.posts.findUnique({
-        where: { id },
-        include: { users: true, post_tags: { include: { tags: true } } },
-      });
+  public getById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    const post = await prisma.posts.findUnique({
+      where: { id },
+      include: { users: true, post_tags: { include: { tags: true } } },
+    });
 
-      if (!post) {
-        res.status(404).json({ error: "Post not found" });
-        return;
-      }
+    if (!post) throw new NotFoundError("Post not found");
 
-      res.status(200).json(toApiShape(post));
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+    res.status(200).json(toApiShape(post));
+  });
 
   // POST /posts — wymaga requireCurrentUser; autorem jest ZAWSZE ten, kto
   // jest zalogowany (req.currentUserId), nigdy pole z body.
-  public async createPost(req: Request, res: Response): Promise<void> {
-    try {
-      const { title, content } = req.body;
-      const post = await prisma.posts.create({
-        data: {
-          user_id: req.currentUserId as number,
-          title,
-          content,
-        },
-      });
-      res.status(201).json(post);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+  public createPost = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { title, content } = req.body;
+    const post = await prisma.posts.create({
+      data: {
+        user_id: req.currentUserId as number,
+        title,
+        content,
+      },
+    });
+    res.status(201).json(post);
+  });
 
   // PUT /posts/:id — wymaga requireCurrentUser + bycia autorem tego posta
-  public async updatePost(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const ownerId = await getPostOwnerId(id);
+  public updatePost = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    await requireOwnPost(id, req.currentUserId);
 
-      if (ownerId === null) {
-        res.status(404).json({ error: "Post not found" });
-        return;
-      }
-      if (ownerId !== req.currentUserId) {
-        res.status(403).json({
-          error: "Forbidden",
-          message: "Możesz edytować tylko własne posty.",
-        });
-        return;
-      }
+    const { title, content } = req.body;
+    const post = await prisma.posts.update({
+      where: { id },
+      data: { title, content },
+    });
 
-      const { title, content } = req.body;
-      const post = await prisma.posts.update({
-        where: { id },
-        data: { title, content },
-      });
-
-      res.status(200).json(post);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+    res.status(200).json(post);
+  });
 
   // DELETE /posts/:id — jw.; kasuje też wiersze w post_tags (ON DELETE
   // CASCADE zdefiniowany w bazie — Prisma nic tu dodatkowo nie robi)
-  public async deletePost(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const ownerId = await getPostOwnerId(id);
+  public deletePost = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    await requireOwnPost(id, req.currentUserId);
 
-      if (ownerId === null) {
-        res.status(404).json({ error: "Post not found" });
-        return;
-      }
-      if (ownerId !== req.currentUserId) {
-        res.status(403).json({
-          error: "Forbidden",
-          message: "Możesz usuwać tylko własne posty.",
-        });
-        return;
-      }
-
-      await prisma.posts.delete({ where: { id } });
-      res.status(200).json({ message: "Post deleted successfully" });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+    await prisma.posts.delete({ where: { id } });
+    res.status(200).json({ message: "Post deleted successfully" });
+  });
 
   // PUT /posts/:id/tags  { names: string[] } — USTAWIA cały zestaw tagów
   // posta na raz. Transakcja: wyczyść powiązania, znajdź-lub-stwórz każdy
   // tag, wstaw powiązania na nowo (skipDuplicates zamiast ON CONFLICT DO
   // NOTHING — na wypadek zduplikowanej nazwy w przesłanej liście).
-  public async setTags(req: Request, res: Response): Promise<void> {
+  public setTags = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const postId = parseInt(req.params.id);
-    const ownerId = await getPostOwnerId(postId);
+    await requireOwnPost(postId, req.currentUserId);
 
-    if (ownerId === null) {
-      res.status(404).json({ error: "Post not found" });
-      return;
-    }
-    if (ownerId !== req.currentUserId) {
-      res.status(403).json({
-        error: "Forbidden",
-        message: "Możesz tagować tylko własne posty.",
+    const names: string[] = Array.isArray(req.body.names) ? req.body.names : [];
+
+    await prisma.$transaction(async (tx) => {
+      await tx.post_tags.deleteMany({ where: { post_id: postId } });
+
+      const tags = await Promise.all(
+        names.map((name) =>
+          tx.tags.upsert({ where: { name }, update: {}, create: { name } })
+        )
+      );
+
+      await tx.post_tags.createMany({
+        data: tags.map((tag) => ({ post_id: postId, tag_id: tag.id })),
+        skipDuplicates: true,
       });
-      return;
-    }
+    });
 
-    try {
-      const names: string[] = Array.isArray(req.body.names)
-        ? req.body.names
-        : [];
-
-      await prisma.$transaction(async (tx) => {
-        await tx.post_tags.deleteMany({ where: { post_id: postId } });
-
-        const tags = await Promise.all(
-          names.map((name) =>
-            tx.tags.upsert({ where: { name }, update: {}, create: { name } })
-          )
-        );
-
-        await tx.post_tags.createMany({
-          data: tags.map((tag) => ({ post_id: postId, tag_id: tag.id })),
-          skipDuplicates: true,
-        });
-      });
-
-      res.status(200).json({ message: "Tags updated", tags: names });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+    res.status(200).json({ message: "Tags updated", tags: names });
+  });
 }
 
 export default PostController;

@@ -1,15 +1,6 @@
 import { Request, Response } from "express";
 import prisma from "../db";
-import { Prisma } from "../generated/prisma/client";
-
-// Prisma nie rzuca "SQL error" na chybił trafił — dla znanych sytuacji
-// (naruszenie ograniczenia, brak rekordu...) rzuca PrismaClientKnownRequestError
-// z konkretnym kodem. P2025 = "Record to update/delete does not exist" —
-// czego stary, ręczny SQL (UPDATE/DELETE bez sprawdzenia rowCount) w ogóle
-// nie wykrywał: zwracał 200 "updated successfully" nawet dla nieistniejącego id.
-const isNotFoundError = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  error.code === "P2025";
+import { asyncHandler } from "../lib/asyncHandler";
 
 // Bez password_hash — ten endpoint (moduł admina) nie ma powodu go znać,
 // a wysyłanie go na front (nawet zahashowanego) to niepotrzebnie
@@ -22,89 +13,56 @@ const PUBLIC_USER_FIELDS = {
 } as const;
 
 class UserController {
-  public async getIndex(req: Request, res: Response): Promise<void> {
-    try {
-      const users = await prisma.users.findMany({ select: PUBLIC_USER_FIELDS });
-      res.status(200).json(users);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+  public getIndex = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const users = await prisma.users.findMany({ select: PUBLIC_USER_FIELDS });
+    res.status(200).json(users);
+  });
 
-  public async createUser(req: Request, res: Response): Promise<void> {
-    try {
-      const { name, email, role } = req.body;
-      // .create() zawsze zwraca utworzony wiersz — stary raw SQL robił
-      // INSERT bez RETURNING, więc "user" w odpowiedzi zawsze było undefined.
-      // role: undefined (nie wysłane) = Prisma stosuje @default(user) ze
-      // schematu, nie trzeba tego osobno obsługiwać.
-      const user = await prisma.users.create({
-        data: { name, email, role },
-        select: PUBLIC_USER_FIELDS,
-      });
-      res.status(200).json({ message: "User added successfully", user });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+  public createUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { name, email, role } = req.body;
+    // .create() zawsze zwraca utworzony wiersz — stary raw SQL robił
+    // INSERT bez RETURNING, więc "user" w odpowiedzi zawsze było undefined.
+    // role: undefined (nie wysłane) = Prisma stosuje @default(user) ze
+    // schematu, nie trzeba tego osobno obsługiwać. P2002 (email zajęty)
+    // leci do errorHandlera jako generyczny "Zasób o tych danych już istnieje".
+    const user = await prisma.users.create({
+      data: { name, email, role },
+      select: PUBLIC_USER_FIELDS,
+    });
+    res.status(200).json({ message: "User added successfully", user });
+  });
 
-  public async getUserById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const user = await prisma.users.findUnique({
-        where: { id },
-        select: PUBLIC_USER_FIELDS,
-      });
-      // findUnique zwraca pojedynczy obiekt albo null — zawijamy w tablicę,
-      // bo istniejący frontend (osobne repo) oczekuje tablicy z tego endpointu
-      res.status(200).json(user ? [user] : []);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+  public getUserById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    const user = await prisma.users.findUnique({
+      where: { id },
+      select: PUBLIC_USER_FIELDS,
+    });
+    // findUnique zwraca pojedynczy obiekt albo null — zawijamy w tablicę,
+    // bo istniejący frontend (osobne repo) oczekuje tablicy z tego endpointu
+    res.status(200).json(user ? [user] : []);
+  });
 
-  public async updateUser(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const { email, name, role } = req.body;
-      await prisma.users.update({ where: { id }, data: { email, name, role } });
-      res.status(200).json({ message: "User updated successfully" });
-    } catch (error) {
-      if (isNotFoundError(error)) {
-        res.status(404).json({ error: "User not found" });
-        return;
-      }
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+  // P2025 ("Record to update does not exist") leci do errorHandlera i
+  // wraca jako 404 — bez osobnego sprawdzania tutaj.
+  public updateUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    const { email, name, role } = req.body;
+    await prisma.users.update({ where: { id }, data: { email, name, role } });
+    res.status(200).json({ message: "User updated successfully" });
+  });
 
-  public async deleteUser(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      await prisma.users.delete({ where: { id } });
-      res.status(200).json({ message: "User deleted successfully" });
-    } catch (error) {
-      if (isNotFoundError(error)) {
-        res.status(404).json({ error: "User not found" });
-        return;
-      }
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
+  public deleteUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    await prisma.users.delete({ where: { id } });
+    res.status(200).json({ message: "User deleted successfully" });
+  });
 
   // https://www.prisma.io/docs/orm/prisma-client/queries/transactions —
   // odpowiednik ręcznego BEGIN/Promise.all/COMMIT: $transaction albo się
   // uda w całości, albo nic się nie zapisze
-  public async createUserTransaction(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
+  public createUserTransaction = asyncHandler(
+    async (req: Request, res: Response): Promise<void> => {
       const users: { name: string; email: string }[] = req.body.users;
       await prisma.$transaction(
         users.map((user) =>
@@ -114,11 +72,8 @@ class UserController {
         )
       );
       res.status(200).json({ message: "Users added successfully" });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
     }
-  }
+  );
 }
 
 export default UserController;
