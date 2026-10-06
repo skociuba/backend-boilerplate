@@ -12,3 +12,16 @@ export const loginSchema = z.object({
   email: z.string().trim().email("nieprawidłowy format email"),
   password: z.string().min(1, "password jest wymagane"),
 });
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email("nieprawidłowy format email"),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, "token jest wymagany"),
+  password: z.string().min(8, "hasło musi mieć minimum 8 znaków"),
+});
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1, "token jest wymagany"),
+});

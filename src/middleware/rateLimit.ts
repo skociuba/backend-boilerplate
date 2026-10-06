@@ -29,3 +29,18 @@ export const registerRateLimiter = rateLimit({
     error: "Zbyt wiele prób rejestracji. Spróbuj ponownie za godzinę.",
   },
 });
+
+// Forgot-password — cel: ktoś mógłby masowo wołać ten endpoint cudzymi
+// adresami, żeby (a) zbombardować kogoś mailami, albo (b) spróbować po
+// czasie odpowiedzi/zachowaniu wykryć, które adresy są zarejestrowane —
+// to drugie i tak jest zablokowane generyczną odpowiedzią w kontrolerze,
+// limit to warstwa dodatkowa.
+export const forgotPasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Zbyt wiele próśb o reset hasła. Spróbuj ponownie za 15 minut.",
+  },
+});

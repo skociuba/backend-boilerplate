@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import prisma from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
+import { createVerificationToken } from "../lib/verificationTokens";
+import { sendAccountSetupEmail } from "../lib/mailer";
 
 // Bez password_hash — ten endpoint (moduł admina) nie ma powodu go znać,
 // a wysyłanie go na front (nawet zahashowanego) to niepotrzebnie
@@ -29,6 +31,18 @@ class UserController {
       data: { name, email, role },
       select: PUBLIC_USER_FIELDS,
     });
+
+    // Konto admin-utworzone NIE ma hasła (password_hash: null — patrz
+    // komentarz przy tej kolumnie w schema.prisma) — bez tego maila user
+    // nigdy nie dostałby się na własne konto. Błąd wysyłki nie blokuje
+    // utworzenia konta (ten sam wzorzec co authController.register).
+    try {
+      const token = await createVerificationToken(user.id, "password_reset");
+      await sendAccountSetupEmail(email, token);
+    } catch (error) {
+      console.error("Nie udało się wysłać maila z ustawieniem konta:", error);
+    }
+
     res.status(200).json({ message: "User added successfully", user });
   });
 

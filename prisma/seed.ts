@@ -19,21 +19,31 @@ async function main() {
   const alicePasswordHash = await hashPassword("alice123");
   const bobPasswordHash = await hashPassword("bob123");
 
+  // email_verified_at ustawione na sztywno — to konta testowe, nie mają
+  // przechodzić przez mail aktywacyjny. Bez tego login() (po wprowadzeniu
+  // wymogu potwierdzenia maila) odrzucałby Alice/Boba przy każdym świeżym
+  // `migrate reset && db seed`.
   const alice = await prisma.users.upsert({
     where: { email: "alice@example.com" },
-    update: { password_hash: alicePasswordHash },
-    create: { name: "Alice", email: "alice@example.com", password_hash: alicePasswordHash },
+    update: { password_hash: alicePasswordHash, email_verified_at: new Date() },
+    create: {
+      name: "Alice",
+      email: "alice@example.com",
+      password_hash: alicePasswordHash,
+      email_verified_at: new Date(),
+    },
   });
   // Bob — admin, do testowania /users (Alice zostaje zwykłym userem, żeby
   // dało się od razu sprawdzić oba przypadki: 403 dla Alice, 200 dla Boba)
   const bob = await prisma.users.upsert({
     where: { email: "bob@example.com" },
-    update: { password_hash: bobPasswordHash, role: "admin" },
+    update: { password_hash: bobPasswordHash, role: "admin", email_verified_at: new Date() },
     create: {
       name: "Bob",
       email: "bob@example.com",
       password_hash: bobPasswordHash,
       role: "admin",
+      email_verified_at: new Date(),
     },
   });
 

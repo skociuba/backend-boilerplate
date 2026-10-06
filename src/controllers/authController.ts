@@ -2,7 +2,13 @@ import { Request, Response } from "express";
 import prisma from "../db";
 import { Prisma } from "../generated/prisma/client";
 import { asyncHandler } from "../lib/asyncHandler";
-import { ConflictError, NotFoundError, UnauthorizedError } from "../lib/errors";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+} from "../lib/errors";
 import { hashPassword, comparePassword } from "../lib/password";
 import {
   signAccessToken,
@@ -17,6 +23,8 @@ import {
   setRefreshCookie,
   clearRefreshCookie,
 } from "../lib/refreshCookie";
+import { createVerificationToken, consumeVerificationToken } from "../lib/verificationTokens";
+import { sendActivationEmail, sendPasswordResetEmail } from "../lib/mailer";
 
 const isUniqueViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -73,8 +81,24 @@ class AuthController {
       throw error;
     }
 
-    const tokens = await issueTokenPair(res, user.id, user.role);
-    res.status(201).json({ user, ...tokens });
+    // Rejestracja NIE loguje od razu — konto istnieje, ale login() (niżej)
+    // odrzuci je, dopóki email nie jest potwierdzony. To świadomy wybór:
+    // "załóż konto" i "zaloguj się" to teraz dwa osobne kroki, rozdzielone
+    // kliknięciem linku z maila. Błąd wysyłki (np. dostawca akurat nie
+    // odpowiada) NIE blokuje utworzenia konta — stąd osobny catch, tylko
+    // log, bez throw; użytkownik i tak nie ma tu nic do odebrania w JSON-ie
+    // (tokenów nie wysyłamy), więc nieudana wysyłka nie zmienia odpowiedzi.
+    try {
+      const token = await createVerificationToken(user.id, "account_activation");
+      await sendActivationEmail(email, token);
+    } catch (error) {
+      console.error("Nie udało się wysłać maila aktywacyjnego:", error);
+    }
+
+    res.status(201).json({
+      user,
+      message: "Konto utworzone. Sprawdź maila, aby je aktywować, a potem się zaloguj.",
+    });
   });
 
   // POST /auth/login { email, password }
@@ -92,6 +116,13 @@ class AuthController {
     const passwordMatches = await comparePassword(password, user.password_hash);
     if (!passwordMatches) {
       throw new UnauthorizedError("Nieprawidłowy email lub hasło");
+    }
+
+    // PO sprawdzeniu hasła, nie przed — inaczej ten komunikat zdradzałby,
+    // że email istnieje i hasło było poprawne, tylko konto nieaktywne
+    // (ten sam powód enumeracji co wyżej, tylko jeden krok dalej).
+    if (!user.email_verified_at) {
+      throw new ForbiddenError("Potwierdź adres email — sprawdź skrzynkę, żeby się zalogować.");
     }
 
     const tokens = await issueTokenPair(res, user.id, user.role);
@@ -193,6 +224,70 @@ class AuthController {
     });
     clearRefreshCookie(res);
     res.status(200).json({ message: "Wylogowano ze wszystkich urządzeń" });
+  });
+
+  // POST /auth/forgot-password { email } — ZAWSZE ta sama odpowiedź,
+  // niezależnie od tego, czy taki email istnieje w bazie. Rozróżnienie
+  // ("nie ma takiego konta" vs "wysłano") pozwoliłoby komuś sprawdzać,
+  // które adresy są zarejestrowane (user enumeration) — ten sam powód co
+  // w login().
+  public forgotPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { email } = req.body;
+    const user = await prisma.users.findUnique({ where: { email } });
+
+    if (user) {
+      const token = await createVerificationToken(user.id, "password_reset");
+      await sendPasswordResetEmail(email, token);
+    }
+
+    res.status(200).json({
+      message: "Jeśli to konto istnieje, wysłaliśmy na nie link do resetu hasła.",
+    });
+  });
+
+  // POST /auth/reset-password { token, password }
+  public resetPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { token, password } = req.body;
+    const userId = await consumeVerificationToken(token, "password_reset");
+
+    if (!userId) throw new BadRequestError("Link jest nieprawidłowy lub wygasł");
+
+    // email_verified_at ustawiane TUTAJ też (nie tylko w verifyEmail) —
+    // skonsumowanie tego tokena, niezależnie z jakiego maila (reset hasła
+    // CZY ustawienie konta po admin-utworzeniu — patrz userController.
+    // createUser), dowodzi, że user ma dostęp do tej skrzynki. Dla konta
+    // admin-utworzonego to w ogóle JEDYNY moment weryfikacji — nie ma
+    // osobnej aktywacji.
+    const password_hash = await hashPassword(password);
+    await prisma.users.update({
+      where: { id: userId },
+      data: { password_hash, email_verified_at: new Date() },
+    });
+
+    // Każdy, kto miał dostęp do starego hasła (albo do sesji założonej PRZED
+    // resetem), traci dostęp — ten sam mechanizm co logoutAll. Bez tego
+    // reset hasła nie wylogowywałby nikogo, kto już był zalogowany.
+    await prisma.refresh_tokens.updateMany({
+      where: { user_id: userId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+
+    res.status(200).json({ message: "Hasło zmienione. Zaloguj się ponownie." });
+  });
+
+  // POST /auth/verify-email { token }
+  public verifyEmail = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { token } = req.body;
+    const userId = await consumeVerificationToken(token, "account_activation");
+
+    if (!userId) throw new BadRequestError("Link jest nieprawidłowy lub wygasł");
+
+    await prisma.users.update({
+      where: { id: userId },
+      data: { email_verified_at: new Date() },
+    });
+
+    res.status(200).json({ message: "Email potwierdzony" });
   });
 }
 
