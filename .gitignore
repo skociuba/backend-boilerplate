@@ -3,3 +3,4 @@ dist/
 .env
 docker-compose.override.yml
 /src/generated/prisma
+/uploads

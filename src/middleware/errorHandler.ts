@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { MulterError } from "multer";
 import { Prisma } from "../generated/prisma/client";
 import { AppError } from "../lib/errors";
 
@@ -47,6 +48,15 @@ export const errorHandler = (
       error: error.message,
       ...(error.details ? { details: error.details } : {}),
     });
+    return;
+  }
+
+  // Multer rzuca WŁASNĄ klasę błędu (nie AppError) dla np. przekroczonego
+  // limitu rozmiaru pliku — fileFilter (lib/uploads.ts) rzuca BadRequestError
+  // sam, więc trafia już w gałąź wyżej; to tutaj łapie to, co leci z
+  // multera samego (limity, zbyt wiele plików naraz).
+  if (error instanceof MulterError) {
+    res.status(400).json({ error: `Błąd wgrywania pliku: ${error.message}` });
     return;
   }
 

@@ -27,8 +27,18 @@ services:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"   # db to nazwa serwisu powyżej
     ports:
       - "3001:3000"   # lewa: port na hoscie/VPS, prawa: port wewnatrz kontenera
+    volumes:
+      # BEZ TEGO: uploads/ (avatary, dokumenty — patrz src/lib/uploads.ts)
+      # ląduje w zapisywalnej warstwie KONTENERA, nie hosta. "docker-compose
+      # down && up" (dokładnie to, co robi .github/workflows/deploy.yaml
+      # przy KAŻDYM deployu) usuwa stary kontener razem z tą warstwą —
+      # wszystkie wgrane pliki znikają przy następnym wdrożeniu. Nazwany
+      # wolumen (jak db-data niżej) przeżywa "down"/"up", bo żyje niezależnie
+      # od cyklu życia kontenera.
+      - uploads-data:/usr/src/app/uploads   # prawa ścieżka = WORKDIR z Dockerfile.prod + "uploads"
     depends_on:
       - db
 
 volumes:
-  db-data:   # nazwa wolumenu - dane bazy przeżywają restart kontenerów
+  db-data:       # nazwa wolumenu - dane bazy przeżywają restart kontenerów
+  uploads-data:  # jw., dla avatarów/dokumentów z src/lib/uploads.ts

@@ -9,6 +9,7 @@ import childRoutes from "./routes/child.routes";
 import authRoutes from "./routes/auth.routes";
 import { attachCurrentUser } from "./middleware/currentUser";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { AVATARS_DIR, ensureUploadDirs } from "./lib/uploads";
 
 const app = express();
 // Konfigurowalny port — żeby dało się odpalić kilka branchy naraz (np.
@@ -23,11 +24,19 @@ const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 // podszyć się pod dowolne IP przez nagłówek X-Forwarded-For).
 app.set("trust proxy", 1);
 
+ensureUploadDirs();
+
 app.use(express.json());
 // req.cookies — potrzebne przed attachCurrentUser/authRoutes, bo refresh
 // token teraz przyjeżdża jako httpOnly cookie, nie w body
 app.use(cookieParser());
 app.use(attachCurrentUser);
+
+// Avatary są PUBLICZNE (zdjęcia, nie dane prywatne) — serwowane bez
+// żadnej autoryzacji, prosto z dysku. Dokumenty NIE są tu wystawione —
+// mają własny, chroniony endpoint (GET /users/:id/profile/document
+// w userProfile.routes.ts), bo w odróżnieniu od avatara mogą być prywatne.
+app.use("/uploads/avatars", express.static(AVATARS_DIR));
 
 app.use(authRoutes);
 app.use(userRoutes);
