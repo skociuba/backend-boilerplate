@@ -9,8 +9,16 @@ import { ForbiddenError, NotFoundError } from "../lib/errors";
 // naszym ręcznym json_agg. Ta funkcja mapuje kształt Prismy z powrotem na
 // kształt, jakiego oczekuje już istniejący frontend (author_id/author_name
 // + płaska tablica tags: {id, name}[]) — ORM nie musi dyktować kształtu API.
+// user_profiles jest relacją na USERS (1:1), nie na POSTS — stąd
+// zagnieżdżenie "users: { include: { user_profiles: true } }", nie
+// osobny klucz "user_profiles" na tym samym poziomie co "users". Avatar
+// posta to w rzeczywistości "avatar autora posta", nie coś, co post sam
+// posiada.
 type PostWithRelations = Prisma.postsGetPayload<{
-  include: { users: true; post_tags: { include: { tags: true } } };
+  include: {
+    users: { include: { user_profiles: true } };
+    post_tags: { include: { tags: true } };
+  };
 }>;
 
 const toApiShape = (post: PostWithRelations) => ({
@@ -20,6 +28,7 @@ const toApiShape = (post: PostWithRelations) => ({
   created_at: post.created_at,
   author_id: post.users.id,
   author_name: post.users.name,
+  author_avatar_url: post.users.user_profiles?.avatar_path ?? null,
   tags: post.post_tags.map((postTag) => ({
     id: postTag.tags.id,
     name: postTag.tags.name,
@@ -52,7 +61,7 @@ class PostController {
   // GET /posts — lista wszystkich postów wraz z autorem (1:N) i tagami (N:M)
   public getIndex = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const posts = await prisma.posts.findMany({
-      include: { users: true, post_tags: { include: { tags: true } } },
+      include: { users: { include: { user_profiles: true } }, post_tags: { include: { tags: true } } },
       orderBy: { created_at: "desc" },
     });
     res.status(200).json(posts.map(toApiShape));
@@ -75,7 +84,7 @@ class PostController {
 
     const posts = await prisma.posts.findMany({
       where: { user_id: userId },
-      include: { users: true, post_tags: { include: { tags: true } } },
+      include: { users: { include: { user_profiles: true } }, post_tags: { include: { tags: true } } },
       orderBy: { created_at: "desc" },
     });
     res.status(200).json(posts.map(toApiShape));
@@ -86,7 +95,7 @@ class PostController {
     const id = parseInt(req.params.id);
     const post = await prisma.posts.findUnique({
       where: { id },
-      include: { users: true, post_tags: { include: { tags: true } } },
+      include: { users: { include: { user_profiles: true } }, post_tags: { include: { tags: true } } },
     });
 
     if (!post) throw new NotFoundError("Post not found");
