@@ -27,6 +27,18 @@ RUN npm install --only=production
 
 COPY --from=builder /usr/src/app/dist ./dist
 
+# BEZ TEGO: `prisma migrate deploy` (patrz .github/workflows/deploy.yaml)
+# nie miałby skąd wiedzieć, jakie migracje istnieją — schema.prisma +
+# migrations/*/migration.sql w ogóle nie trafiały do tego obrazu, tylko do
+# stage 1 (builder). seed.ts jedzie w tym samym folderze, ale nigdy się nie
+# wykonuje tutaj — nieszkodliwy bagaż, nie tylko potrzebny plik.
+COPY --from=builder /usr/src/app/prisma ./prisma
+# Prisma 7 czyta ten plik, żeby wiedzieć GDZIE leży schema/migrations —
+# bez niego "migrate deploy" nie wie nawet, czego szukać (sprawdzone:
+# `npx prisma migrate dev` lokalnie zawsze loguje "Loaded Prisma config
+# from prisma7.config.ts" — to nie jest opcjonalne).
+COPY --from=builder /usr/src/app/prisma7.config.ts ./prisma7.config.ts
+
 # Wolumen w docker-compose.yml montuje się TUTAJ (/usr/src/app/uploads).
 # Świeży named volume jest przy pierwszym użyciu inicjalizowany
 # zawartością/właścicielem tego, co już jest w obrazie pod tą ścieżką —

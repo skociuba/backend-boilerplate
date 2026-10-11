@@ -49,9 +49,15 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.yml,sql/"
+          source: "docker-compose.yml,sql/,scripts/"
           target: "/var/www/backend-node"
 
+      # Kolejność ma znaczenie: backup PRZED tym, jak cokolwiek zacznie się
+      # zmieniać (żeby mieć czym się odkręcić, jeśli migracja coś popsuje) →
+      # pull nowego obrazu → migrate deploy TYM obrazem na WCIĄŻ żyjącej
+      # starej bazie (`docker-compose run` nie dotyka działających
+      # kontenerów, tylko odpala jednorazowy, z tą samą siecią/env co
+      # serwis `app`) → dopiero teraz down+up, czyli realne przełączenie.
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v0.1.10
         with:
@@ -60,6 +66,9 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /var/www/backend-node
+            chmod +x scripts/backup-db.sh
+            ./scripts/backup-db.sh .
             sudo docker-compose pull
+            sudo docker-compose run --rm app npx prisma migrate deploy
             sudo docker-compose down
             sudo docker-compose up -d
