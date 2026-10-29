@@ -150,3 +150,66 @@ model children {
 
   @@index([user_id], map: "children_user_id_index")
 }
+
+///////////////////////////////////////////////////////////////////////////////////
+
+// ============================================================
+// CLIENT
+// ============================================================
+model Client {
+  id      Int            @id @default(autoincrement()) // PK
+  profile ClientProfile?                               // 1:1 (FK po stronie ClientProfile)
+  orders  Order[]                                      // 1:N (FK po stronie Order)
+
+  @@map("client")
+}
+
+// ============================================================
+// CLIENT_PROFILE
+// ============================================================
+model ClientProfile {
+  clientId Int    @id @map("client_id")                // PK + FK -> client.id => relacja 1:1
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+                                                       // profil bez klienta nie ma sensu -> Cascade
+  @@map("client_profile")
+}
+
+// ============================================================
+// ORDER
+// ============================================================
+model Order {
+  id       Int            @id @default(autoincrement()) // PK
+  clientId Int            @map("client_id")             // FK -> client.id
+  client   Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+                                                        // nie da się usunąć klienta, który ma zamówienia
+  items    OrderProduct[]                               // 1:N z tabelą łączącą
+
+  @@index([clientId])                                   // indeks na FK
+  @@map("orders")                                       // "order" to słowo zarezerwowane w SQL
+}
+
+// ============================================================
+// PRODUCT
+// ============================================================
+model Product {
+  id         Int            @id @default(autoincrement()) // PK
+  orderItems OrderProduct[]                               // 1:N z tabelą łączącą
+
+  @@map("product")
+}
+
+// ============================================================
+// ORDER_PRODUCT – tabela łącząca N:M Order <-> Product
+// ============================================================
+model OrderProduct {
+  orderId   Int     @map("order_id")                    // FK -> orders.id  (część PK)
+  productId Int     @map("product_id")                  // FK -> product.id (część PK)
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+                                                        // usunięcie zamówienia usuwa jego pozycje
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+                                                        // nie da się usunąć produktu, który był zamawiany
+
+  @@id([orderId, productId])                            // PK złożony
+  @@index([productId])                                  // indeks na drugi FK (pierwszy pokrywa PK)
+  @@map("order_product")
+}
