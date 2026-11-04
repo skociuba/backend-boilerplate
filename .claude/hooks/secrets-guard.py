@@ -3,14 +3,15 @@
 
 Secrets (DB password, JWT secret, SMTP) would otherwise land in the model's
 context. File tools are blocked by permissions.deny in settings.json; this
-covers Bash (cat .env, grep X .env, source .env ...). .env.example is fine.
+covers Bash (cat .env, grep X .env, source .env ...). Templates
+(.env.example, .env.sample, .env.template) are fine.
 """
 import json
 import re
 import shlex
 import sys
 
-SECRET_ENV_RE = re.compile(r"(^|/)\.env(\.(?!example)[\w.-]+)?$")
+SECRET_ENV_RE = re.compile(r"(^|/)\.env(\.(?!example|sample|template)[\w.-]+)?$")
 
 
 def main():
