@@ -1,0 +1,18 @@
+. "$(dirname "$0")/branch-name.sh"
+
+# git podaje na stdin linie: <local_ref> <local_sha> <remote_ref> <remote_sha>
+zero=0000000000000000000000000000000000000000
+while read -r local_ref local_sha remote_ref remote_sha; do
+  branch=${remote_ref#refs/heads/}
+  [ "$branch" = "$remote_ref" ] && continue  # tagi itp.
+
+  if [ "$branch" = "master" ]; then
+    echo "✖ Push na master zablokowany — otwórz PR z brancha feat/... / fix/..."
+    exit 1
+  fi
+
+  # Usuwanie brancha zdalnego — nazwa nie ma znaczenia.
+  [ "$local_sha" = "$zero" ] && continue
+
+  check_branch_name "$branch" || exit 1
+done

@@ -1,0 +1,12 @@
+. "$(dirname "$0")/branch-name.sh"
+
+# Detached HEAD (rebase, cherry-pick) — nie ma brancha do sprawdzenia.
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+
+if [ "$branch" = "master" ]; then
+  echo "✖ Nie commitujemy bezpośrednio na master — zmiany wchodzą przez PR."
+  echo "  Przenieś pracę na branch: git switch -c feat/<opis>"
+  exit 1
+fi
+
+check_branch_name "$branch" || exit 1
