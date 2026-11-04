@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""PreToolUse guard: Claude works on the local repo only.
+"""PreToolUse guard: Claude may read remotes but never write to them.
 
 Commit/branch naming is enforced locally by .husky/ (commitlint, branch-name.sh).
-Claude gets no access to remotes at all: no push/fetch/pull/clone, no gh/glab,
-no requests to GitHub/GitLab. Everything that leaves this machine is the user's call.
-Claude also may not skip the husky hooks with --no-verify.
+Allowed: git fetch/ls-remote/clone, reading GitHub/GitLab (WebFetch, curl GET),
+read-only gh/glab (view, list, diff, ...).
+Blocked: anything that changes a remote (push, PR/MR create/merge, gh api,
+curl POST, remote set-url), git pull (merges into the user's branch - their call),
+and --no-verify (skips the husky hooks).
 """
 import json
 import re
 import shlex
 import sys
 
-REMOTE_SUBCOMMANDS = {"push", "fetch", "pull", "clone", "ls-remote", "submodule", "request-pull"}
+WRITE_SUBCOMMANDS = {"push", "pull", "submodule", "request-pull", "send-email"}
 REMOTE_EDIT = {"add", "set-url", "rename", "remove", "rm", "prune", "update", "set-head"}
 FORGE_CLIS = {"gh", "glab", "hub"}
+FORGE_READ_VERBS = {"view", "list", "status", "diff", "checks", "browse"}
+HTTP_CLIENTS = {"curl", "wget", "http", "https", "xh"}
+HTTP_WRITE_FLAGS = re.compile(r"^(-X|--request|-d|--data.*|-F|--form.*|-T|--upload-file|--json|--post-.*|--method)$")
 FORGE_HOST_RE = re.compile(r"(github|gitlab)(usercontent)?\.com", re.I)
 # git global options that take a separate value: git -C <dir> push ...
 GLOBAL_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
@@ -23,7 +28,7 @@ def deny(reason):
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason": reason + ". Remote operations are the user's job (git-guard hook)",
+        "permissionDecisionReason": reason + ". Writing to remotes is the user's job (git-guard hook)",
     }}))
     sys.exit(0)
 
@@ -48,33 +53,35 @@ def check_git(args):
     if i >= len(args):
         return
     sub, rest = args[i], args[i + 1:]
-    if sub in REMOTE_SUBCOMMANDS:
-        deny(f"git {sub} talks to a remote")
+    if sub in WRITE_SUBCOMMANDS:
+        deny(f"git {sub} changes a remote or merges into the user's branch")
     if sub == "remote" and rest and rest[0] in REMOTE_EDIT:
         deny(f"git remote {rest[0]} changes remotes")
     if "--no-verify" in rest or (sub == "commit" and "-n" in rest):
         deny("--no-verify skips the repo's husky hooks (commitlint, branch names)")
 
 
+def check_forge_cli(name, args):
+    # gh pr view 12 / glab mr list / gh run view: <group> <verb> ...
+    positional = [a for a in args if not a.startswith("-")]
+    if len(positional) < 2 or positional[1] not in FORGE_READ_VERBS:
+        deny(f"{name} {' '.join(positional[:2])} is not a read-only command")
+
+
 def main():
     data = json.load(sys.stdin)
-    tool = data.get("tool_name")
-    inp = data.get("tool_input") or {}
-
-    if tool == "WebFetch":
-        if FORGE_HOST_RE.search(inp.get("url", "")):
-            deny("WebFetch to GitHub/GitLab")
-        return
-
-    command = inp.get("command", "")
-    if FORGE_HOST_RE.search(command):
-        deny("Command mentions a GitHub/GitLab host (curl, ssh, git URL)")
+    if data.get("tool_name") == "WebFetch":
+        return  # WebFetch only reads
+    command = (data.get("tool_input") or {}).get("command", "")
+    forge_mentioned = bool(FORGE_HOST_RE.search(command))
     for tokens in commands(command):
         name = tokens[0].rsplit("/", 1)[-1]
-        if name in FORGE_CLIS:
-            deny(f"{name} CLI talks to GitHub/GitLab")
         if name == "git":
             check_git(tokens[1:])
+        elif name in FORGE_CLIS:
+            check_forge_cli(name, tokens[1:])
+        elif name in HTTP_CLIENTS and forge_mentioned and any(HTTP_WRITE_FLAGS.match(t) for t in tokens[1:]):
+            deny(f"{name} with a write flag against GitHub/GitLab")
 
 
 if __name__ == "__main__":

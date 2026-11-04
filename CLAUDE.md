@@ -14,11 +14,11 @@ npx prisma migrate dev --name <name>   # new migration after editing prisma/sche
 npx prisma generate           # client → src/generated/prisma (gitignored)
 ```
 
-## Git — local only
+## Git — read remotes, never write them
 
-- Claude does local git only: status, diff, log, branch, commit. **Never** push, fetch, pull,
-  open PRs, or contact GitHub/GitLab — the user does all remote work. Enforced by
-  `.claude/hooks/git-guard.py`.
+- Claude may read remotes: `git fetch`, `ls-remote`, GitHub/GitLab pages, read-only `gh`/`glab`.
+- **Never** write to them: push, pull, open/merge PRs, `gh api`, change remotes — the user
+  does all of that. Enforced by `.claude/hooks/git-guard.py`.
 - Branches: `<type>/<kebab-case>`, e.g. `feat/children-crud`, `fix/login-cookie`.
   Types: feat fix chore refactor docs test ci perf build style hotfix.
   Never commit on `master`.
