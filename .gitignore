@@ -5,3 +5,4 @@ docker-compose.override.yml
 /src/generated/prisma
 /uploads
 /backups
+.claude/settings.local.json
