@@ -32,6 +32,17 @@
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/naming-guard.py\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
       }
     ]
   }

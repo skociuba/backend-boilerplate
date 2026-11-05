@@ -23,7 +23,8 @@ npx prisma generate           # client → src/generated/prisma (gitignored)
   Types: feat fix chore refactor docs test ci perf build style hotfix.
   Never commit on `master`.
 - Commits: Conventional Commits (`feat: ...`, `fix(auth): ...`), lowercase subject.
-  Enforced by husky + commitlint (`.husky/`, `commitlint.config.js`). Never `--no-verify`.
+- Both checked before the command runs by `.claude/hooks/naming-guard.py`, and again at
+  commit time by husky + commitlint (`.husky/`, `commitlint.config.js`). Never `--no-verify`.
 - Pushing `deploy` deploys to production (`.github/workflows/deploy.yaml`).
 
 ## Rules

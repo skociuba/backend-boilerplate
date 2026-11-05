@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse guard: Claude may read remotes but never write to them.
 
-Commit/branch naming is enforced locally by .husky/ (commitlint, branch-name.sh).
+Commit/branch naming is enforced locally by naming-guard.py and .husky/.
 Allowed: git fetch/ls-remote/clone, reading GitHub/GitLab (WebFetch, curl GET),
 read-only gh/glab (view, list, diff, ...).
 Blocked: anything that changes a remote (push, PR/MR create/merge, gh api,
