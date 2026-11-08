@@ -19,12 +19,14 @@ npx prisma generate           # client → src/generated/prisma (gitignored)
 - Claude may read remotes: `git fetch`, `ls-remote`, GitHub/GitLab pages, read-only `gh`/`glab`.
 - **Never** write to them: push, pull, open/merge PRs, `gh api`, change remotes — the user
   does all of that. Enforced by `.claude/hooks/git-guard.py`.
-- Branches: `<type>/<kebab-case>`, e.g. `feat/children-crud`, `fix/login-cookie`.
-  Types: feat fix chore refactor docs test ci perf build style hotfix.
-  Never commit on `master`.
-- Commits: Conventional Commits (`feat: ...`, `fix(auth): ...`), lowercase subject.
-- Both checked before the command runs by `.claude/hooks/naming-guard.py`, and again at
-  commit time by husky + commitlint (`.husky/`, `commitlint.config.js`). Never `--no-verify`.
+- Branches: `<type>/<desc>`, `<type>-<ticket>/<desc>` or `<type>/<ticket>/<desc>`,
+  e.g. `feat/children-crud`, `feat-26998/history-krakow`.
+  Types: feat fix chore refactor ci docs test perf style build revert hotfix.
+  Never commit on `master`/`main`.
+- Commits: Conventional Commits (`feat: ...`, `fix(auth): [28917] ...`); prefer a lowercase subject.
+- Both checked before the command runs by `.claude/hooks/naming-guard.py` (same rules as the
+  company repo). Husky + commitlint (`.husky/`, `commitlint.config.js`) hold the same rules for
+  manual commits but are commented out for now. Never `--no-verify`.
 - Pushing `deploy` deploys to production (`.github/workflows/deploy.yaml`).
 
 ## Rules
