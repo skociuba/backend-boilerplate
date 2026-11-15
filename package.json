@@ -8,7 +8,8 @@
     "build": "tsc",
     "serve": "node dist/index.js",
     "test": "jest",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "make-admin": "ts-node src/scripts/makeAdmin.ts"
   },
   "keywords": [],
   "author": "",
