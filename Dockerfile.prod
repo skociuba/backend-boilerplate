@@ -1,0 +1,55 @@
+# Stage 1: Build
+# node:18 nie wystarcza — obecna wersja Prisma (7.x) wymaga Node 20.19+/
+# 22.12+/24+; obraz zbudowany na node:18 nie przechodził w ogóle `npm install`
+# (preinstall Prismy odmawiał). 22 dobrane pod wersję używaną lokalnie.
+FROM node:22-alpine AS builder
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+# src/generated/prisma jest w .gitignore (patrz komentarz w schema.prisma) —
+# świeży checkout (tak jak ten, który właśnie zrobił actions/checkout w CI)
+# NIE ma tego katalogu. Bez tej linii `npm run build` (tsc) wywala się na
+# każdym imporcie "../generated/prisma/client" w całym projekcie.
+RUN npx prisma generate
+RUN npm run build
+
+# Stage 2: Production
+FROM node:22-alpine
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+RUN npm install --only=production
+
+COPY --from=builder /usr/src/app/dist ./dist
+
+# BEZ TEGO: `prisma migrate deploy` (patrz .github/workflows/deploy.yaml)
+# nie miałby skąd wiedzieć, jakie migracje istnieją — schema.prisma +
+# migrations/*/migration.sql w ogóle nie trafiały do tego obrazu, tylko do
+# stage 1 (builder). seed.ts jedzie w tym samym folderze, ale nigdy się nie
+# wykonuje tutaj — nieszkodliwy bagaż, nie tylko potrzebny plik.
+COPY --from=builder /usr/src/app/prisma ./prisma
+# Prisma 7 czyta ten plik, żeby wiedzieć GDZIE leży schema/migrations —
+# bez niego "migrate deploy" nie wie nawet, czego szukać (sprawdzone:
+# `npx prisma migrate dev` lokalnie zawsze loguje "Loaded Prisma config
+# from prisma7.config.ts" — to nie jest opcjonalne).
+COPY --from=builder /usr/src/app/prisma7.config.ts ./prisma7.config.ts
+
+# Wolumen w docker-compose.yml montuje się TUTAJ (/usr/src/app/uploads).
+# Świeży named volume jest przy pierwszym użyciu inicjalizowany
+# zawartością/właścicielem tego, co już jest w obrazie pod tą ścieżką —
+# bez tego katalog zostałby pod root:root (domyślny właściciel dla ścieżki,
+# która jeszcze nie istniała), a proces działający jako USER node (niżej)
+# dostałby "Permission denied" na pierwszym mkdir (sprawdzone: zbudowany
+# bez tego obraz faktycznie tak się wywalał).
+RUN mkdir -p uploads && chown -R node:node uploads
+
+USER node
+
+EXPOSE 3000
+
+CMD ["npm", "run", "serve"]

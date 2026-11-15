@@ -1,0 +1,5 @@
+# WYŁĄCZONY — żeby włączyć, odkomentuj linię z npx.
+# Co robi: przy każdym `git commit` sprawdza wiadomość przez commitlint
+# (reguły w commitlint.config.js, te same co w naming-guard.py).
+
+# npx --no -- commitlint --edit "$1"

@@ -1,111 +1,93 @@
 import { Request, Response } from "express";
-import pool from "../db";
-import { QueryResult } from "pg";
+import prisma from "../db";
+import { asyncHandler } from "../lib/asyncHandler";
+import { createVerificationToken } from "../lib/verificationTokens";
+import { sendAccountSetupEmail } from "../lib/mailer";
 
-// https://node-postgres.com/features/queries
+// Bez password_hash — ten endpoint (moduł admina) nie ma powodu go znać,
+// a wysyłanie go na front (nawet zahashowanego) to niepotrzebnie
+// rozszerzona powierzchnia ataku, gdyby kiedyś coś po drodze go zalogowało.
+const PUBLIC_USER_FIELDS = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+} as const;
+
 class UserController {
-  public async getIndex(req: Request, res: Response): Promise<void> {
+  public getIndex = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const users = await prisma.users.findMany({ select: PUBLIC_USER_FIELDS });
+    res.status(200).json(users);
+  });
+
+  public createUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { name, email, role } = req.body;
+    // .create() zawsze zwraca utworzony wiersz — stary raw SQL robił
+    // INSERT bez RETURNING, więc "user" w odpowiedzi zawsze było undefined.
+    // role: undefined (nie wysłane) = Prisma stosuje @default(user) ze
+    // schematu, nie trzeba tego osobno obsługiwać. P2002 (email zajęty)
+    // leci do errorHandlera jako generyczny "Zasób o tych danych już istnieje".
+    const user = await prisma.users.create({
+      data: { name, email, role },
+      select: PUBLIC_USER_FIELDS,
+    });
+
+    // Konto admin-utworzone NIE ma hasła (password_hash: null — patrz
+    // komentarz przy tej kolumnie w schema.prisma) — bez tego maila user
+    // nigdy nie dostałby się na własne konto. Błąd wysyłki nie blokuje
+    // utworzenia konta (ten sam wzorzec co authController.register).
     try {
-      const result = await pool.query("SELECT * FROM users");
-
-      console.log({ result: JSON.stringify(result) });
-
-      res.status(200).json(result.rows);
+      const token = await createVerificationToken(user.id, "password_reset");
+      await sendAccountSetupEmail(email, token);
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
+      console.error("Nie udało się wysłać maila z ustawieniem konta:", error);
     }
-  }
 
-  public async createUser(req: Request, res: Response): Promise<void> {
-    try {
-      const { name, email } = req.body;
-      const result = await pool.query(
-        "INSERT INTO users (name, email) VALUES ($1, $2)",
-        [name, email]
+    res.status(200).json({ message: "User added successfully", user });
+  });
+
+  public getUserById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    const user = await prisma.users.findUnique({
+      where: { id },
+      select: PUBLIC_USER_FIELDS,
+    });
+    // findUnique zwraca pojedynczy obiekt albo null — zawijamy w tablicę,
+    // bo istniejący frontend (osobne repo) oczekuje tablicy z tego endpointu
+    res.status(200).json(user ? [user] : []);
+  });
+
+  // P2025 ("Record to update does not exist") leci do errorHandlera i
+  // wraca jako 404 — bez osobnego sprawdzania tutaj.
+  public updateUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    const { email, name, role } = req.body;
+    await prisma.users.update({ where: { id }, data: { email, name, role } });
+    res.status(200).json({ message: "User updated successfully" });
+  });
+
+  public deleteUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    await prisma.users.delete({ where: { id } });
+    res.status(200).json({ message: "User deleted successfully" });
+  });
+
+  // https://www.prisma.io/docs/orm/prisma-client/queries/transactions —
+  // odpowiednik ręcznego BEGIN/Promise.all/COMMIT: $transaction albo się
+  // uda w całości, albo nic się nie zapisze
+  public createUserTransaction = asyncHandler(
+    async (req: Request, res: Response): Promise<void> => {
+      const users: { name: string; email: string }[] = req.body.users;
+      await prisma.$transaction(
+        users.map((user) =>
+          prisma.users.create({
+            data: { name: user.name, email: user.email },
+          })
+        )
       );
-
-      console.log({ result: JSON.stringify(result) });
-
-      res
-        .status(200)
-        .json({ message: "User added successfully", user: result.rows[0] });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-
-  public async getUserById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const result = await pool.query("SELECT * FROM users WHERE id = $1", [
-        id,
-      ]);
-      res.status(200).json(result.rows);
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-
-  public async updateUser(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const { email } = req.body;
-      const result = await pool.query(
-        "UPDATE users SET email = $1 WHERE id = $2",
-        [email, id]
-      );
-      res.status(200).json({ message: "User updated successfully" });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-
-  public async deleteUser(req: Request, res: Response): Promise<void> {
-    try {
-      const id = parseInt(req.params.id);
-      const result = await pool.query("DELETE FROM users WHERE id = $1", [id]);
-      res.status(200).json({ message: "User deleted successfully" });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-
-  //https://node-postgres.com/features/transactions
-  public async createUserTransaction(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    const client = await pool.connect();
-
-    try {
-      await client.query("BEGIN");
-      const users = req.body.users;
-      const promises: Promise<QueryResult<any>>[] = [];
-      for (const user of users) {
-        const { name, email } = user;
-        promises.push(
-          client.query("INSERT INTO users (name, email) VALUES ($1, $2)", [
-            name,
-            email,
-          ])
-        );
-      }
-
-      await Promise.all(promises);
-
-      await client.query("COMMIT");
       res.status(200).json({ message: "Users added successfully" });
-    } catch (error) {
-      console.error(error);
-      await client.query("ROLLBACK");
-      res.status(500).json({ error: (error as Error).message });
     }
-  }
+  );
 }
 
 export default UserController;

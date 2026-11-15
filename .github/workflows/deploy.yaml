@@ -1,0 +1,113 @@
+name: Deploy Backend
+
+# Produkcja idzie z master (jak frontend) — osobna gałąź deploy tylko
+# duplikowała master i trzeba było ją ręcznie doganiać. workflow_dispatch
+# pozwala odpalić deploy ponownie z zakładki Actions bez pustego commita.
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  # Skoro każdy merge do master ląduje na produkcji, testy muszą go móc
+  # zatrzymać, zanim powstanie obraz. Prisma w testach jest zamockowana,
+  # więc baza w CI nie jest potrzebna; generate jest, bo src/generated
+  # jest gitignorowany, a bez niego tsc i importy klienta się wywalają.
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+
+  build:
+    needs: [test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile.prod
+          push: true
+          tags: |
+            sebastiankociuba/node-backend:latest
+            sebastiankociuba/node-backend:${{ github.sha }}
+
+  deploy:
+    name: Deploy Backend to VPS
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          # sql/ już nie istnieje — schemat budują migracje Prismy, nie initdb
+          source: "docker-compose.yml,scripts/"
+          target: "/var/www/backend-node"
+
+      # Kolejność ma znaczenie: backup PRZED tym, jak cokolwiek zacznie się
+      # zmieniać (żeby mieć czym się odkręcić, jeśli migracja coś popsuje) →
+      # pull nowego obrazu → migrate deploy TYM obrazem na WCIĄŻ żyjącej
+      # starej bazie (`docker-compose run` nie dotyka działających
+      # kontenerów, tylko odpala jednorazowy, z tą samą siecią/env co
+      # serwis `app`) → dopiero teraz down+up, czyli realne przełączenie.
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          # set -e: ssh-action v0.1.x domyślnie (script_stop: false) leci dalej
+          # po błędzie — nieudany migrate deploy kończyłby się down+up nowego
+          # kodu na starej bazie zamiast zatrzymania deployu.
+          script: |
+            set -e
+            cd /var/www/backend-node
+            chmod +x scripts/backup-db.sh
+            ./scripts/backup-db.sh .
+            sudo docker-compose pull
+            sudo docker-compose run --rm app npx prisma migrate deploy
+            sudo docker-compose down
+            sudo docker-compose up -d

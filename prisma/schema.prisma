@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Wewnętrzna tabela node-pg-migrate (śledzi zastosowane migracje) — nie
+/// nasza domena. @@ignore mówi Prisma Client "wiem że ta tabela istnieje,
+/// ale nie generuj dla niej żadnych metod" — bezpieczniejsze niż usunięcie
+/// modelu, bo `db push`/`migrate dev` nie potraktuje jej jako "do skasowania".
+model pgmigrations {
+  id     Int      @id @default(autoincrement())
+  name   String   @db.VarChar(255)
+  run_on DateTime @db.Timestamp(6)
+
+  @@ignore
+}
+
+model post_tags {
+  post_id Int
+  tag_id  Int
+  posts   posts @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tags    tags  @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([post_id, tag_id])
+  @@index([tag_id], map: "post_tags_tag_id_index")
+}
+
+model posts {
+  id         Int         @id @default(autoincrement())
+  user_id    Int
+  title      String      @db.VarChar(255)
+  content    String?
+  created_at DateTime    @default(now()) @db.Timestamp(6)
+  post_tags  post_tags[]
+  users      users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "posts_user_id_index")
+}
+
+model tags {
+  id        Int         @id @default(autoincrement())
+  name      String      @unique @db.VarChar(50)
+  post_tags post_tags[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model user_profiles {
+  user_id                Int      @id
+  pesel                  String   @unique @db.VarChar(11)
+  date_of_birth          DateTime @db.Date
+  phone                  String?  @db.VarChar(20)
+  bio                    String?  @db.Text
+  // Pliki same leżą na dysku (uploads/), tu trzymamy TYLKO ścieżkę — ten
+  // sam wzorzec jak przy haśle/refresh tokenie: nigdy nie trzymaj w bazie
+  // czegoś, co można trzymać poza nią jako referencję. document_original_name
+  // bo nazwa na dysku to UUID (patrz lib/uploads.ts) — bez tego pobrany plik
+  // nazwałby się losowym ciągiem znaków, nie np. "umowa.pdf".
+  avatar_path            String?
+  document_path          String?
+  document_original_name String?
+  users                  users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+// Dwie role na start — wystarczające, żeby zademonstrować autoryzację
+// opartą o rolę (nie tylko o własność zasobu, jak przy postach/dzieciach).
+// Prisma enum = wartość sprawdzana przez Postgresa (CHECK/native enum),
+// nie tylko w TypeScripcie — literówka w SQL-u i tak nie przejdzie.
+enum Role {
+  user
+  admin
+}
+
+model users {
+  id                  Int                   @id @default(autoincrement())
+  name                String                @db.VarChar(255)
+  email               String                @unique @db.VarChar(255)
+  // Nullable — konta założone PRZED wprowadzeniem logowania (np. testowe,
+  // dodane ręcznie przez POST /users) nie mają hasła i nie mogą się
+  // zalogować, dopóki go nie ustawią. Nowe konta (przez /auth/register)
+  // zawsze mają tu wartość.
+  password_hash       String?               @db.VarChar(255)
+  // Domyślnie zwykły user — samo /auth/register NIE pozwala nikomu nadać
+  // sobie admina. Na admina awansuje się tylko ręcznie (UPDATE w bazie)
+  // albo przez innego admina (gdyby taki endpoint kiedyś powstał).
+  role                Role                  @default(user)
+  // NULL = konto jeszcze nie potwierdzone mailem. Rejestracja i tak loguje
+  // od razu (tokeny wracają w POST /auth/register) — to pole NIC jeszcze
+  // nie blokuje, tylko zapisuje fakt. Gdyby kiedyś trzeba było zablokować
+  // jakąś akcję "dopóki nie potwierdzisz maila", warunek to już tylko
+  // `if (!user.email_verified_at)`.
+  email_verified_at   DateTime?
+  posts               posts[]
+  user_profiles       user_profiles?
+  children            children[]
+  refresh_tokens      refresh_tokens[]
+  verification_tokens verification_tokens[]
+}
+
+// Jedna tabela, dwa cele (purpose) — aktywacja konta i reset hasła to
+// DOKŁADNIE ten sam mechanizm (losowy token → hash w bazie → mail z
+// linkiem → konsumpcja), różni się tylko to, co się dzieje PO weryfikacji.
+// Wzorzec jak przy refresh_tokens: token_hash, nigdy surowy token.
+model verification_tokens {
+  id         Int          @id @default(autoincrement())
+  user_id    Int
+  token_hash String       @unique @db.VarChar(64)
+  purpose    TokenPurpose
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime     @default(now())
+  users      users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id])
+}
+
+enum TokenPurpose {
+  password_reset
+  account_activation
+}
+
+// Refresh token NIE jest trzymany wprost — tylko jego hash (sha256, patrz
+// lib/jwt.ts). Gdyby baza wyciekła, surowe tokeny i tak są bezużyteczne,
+// tak samo jak przy haśle. revoked_at pozwala unieważnić token PRZED jego
+// naturalnym wygaśnięciem (logout, rotacja przy /auth/refresh) — czego
+// sam JWT (stateless) nie potrafi.
+model refresh_tokens {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  token_hash String    @unique @db.VarChar(64)
+  expires_at DateTime  @db.Timestamp(6)
+  revoked_at DateTime? @db.Timestamp(6)
+  created_at DateTime  @default(now()) @db.Timestamp(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "refresh_tokens_user_id_index")
+}
+
+model children {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  name          String   @db.VarChar(255)
+  age           Int
+  date_of_birth DateTime @db.Date
+  notes         String?  @db.Text
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "children_user_id_index")
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+
+// ============================================================
+// CLIENT
+// ============================================================
+model Client {
+  id      Int            @id @default(autoincrement()) // PK
+  profile ClientProfile?                               // 1:1 (FK po stronie ClientProfile)
+  orders  Order[]                                      // 1:N (FK po stronie Order)
+
+  @@map("client")
+}
+
+// ============================================================
+// CLIENT_PROFILE
+// ============================================================
+model ClientProfile {
+  clientId Int    @id @map("client_id")                // PK + FK -> client.id => relacja 1:1
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+                                                       // profil bez klienta nie ma sensu -> Cascade
+  @@map("client_profile")
+}
+
+// ============================================================
+// ORDER
+// ============================================================
+model Order {
+  id       Int            @id @default(autoincrement()) // PK
+  clientId Int            @map("client_id")             // FK -> client.id
+  client   Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+                                                        // nie da się usunąć klienta, który ma zamówienia
+  items    OrderProduct[]                               // 1:N z tabelą łączącą
+
+  @@index([clientId])                                   // indeks na FK
+  @@map("orders")                                       // "order" to słowo zarezerwowane w SQL
+}
+
+// ============================================================
+// PRODUCT
+// ============================================================
+model Product {
+  id         Int            @id @default(autoincrement()) // PK
+  orderItems OrderProduct[]                               // 1:N z tabelą łączącą
+
+  @@map("product")
+}
+
+// ============================================================
+// ORDER_PRODUCT – tabela łącząca N:M Order <-> Product
+// ============================================================
+model OrderProduct {
+  orderId   Int     @map("order_id")                    // FK -> orders.id  (część PK)
+  productId Int     @map("product_id")                  // FK -> product.id (część PK)
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+                                                        // usunięcie zamówienia usuwa jego pozycje
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+                                                        // nie da się usunąć produktu, który był zamawiany
+
+  @@id([orderId, productId])                            // PK złożony
+  @@index([productId])                                  // indeks na drugi FK (pierwszy pokrywa PK)
+  @@map("order_product")
+}

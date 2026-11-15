@@ -1,0 +1,17 @@
+# WYŁĄCZONY — żeby włączyć, odkomentuj blok niżej (usuń "# " z początku linii).
+# Co robi: przy każdym `git commit` (twoim i Claude) blokuje commit na master/main
+# oraz na branchu o złej nazwie (reguła w branch-name.sh).
+# Commity Claude i tak sprawdza .claude/hooks/naming-guard.py; ten hook jest dla ciebie.
+
+# . "$(dirname "$0")/branch-name.sh"
+#
+# # Detached HEAD (rebase, cherry-pick) — nie ma brancha do sprawdzenia.
+# branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+#
+# if [ "$branch" = "master" ] || [ "$branch" = "main" ]; then
+#   echo "✖ Nie commitujemy bezpośrednio na $branch — zmiany wchodzą przez PR."
+#   echo "  Przenieś pracę na branch: git switch -c feat/<opis>"
+#   exit 1
+# fi
+#
+# check_branch_name "$branch" || exit 1
