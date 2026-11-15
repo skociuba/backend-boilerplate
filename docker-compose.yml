@@ -28,6 +28,14 @@ services:
     # się nie zapisuje trwale, następny normalny deploy wraca do :latest
     # sam, bez żadnego dodatkowego kroku.
     image: sebastiankociuba/node-backend:${IMAGE_TAG:-latest}   # obraz z Docker Hub, budowany przez GitHub Actions
+    # .env nie jedzie w obrazie (.dockerignore), a samo ${...} niżej tylko
+    # podstawia wartości do TEGO pliku — bez env_file JWT_*, SMTP_* i
+    # FRONTEND_URL nie docierają do kontenera i logowanie wywala się na
+    # jwt.sign ("secretOrPrivateKey must have a value"). DATABASE_URL z
+    # environment ma pierwszeństwo nad env_file, więc lokalny localhost:5433
+    # z .env nie nadpisze adresu db:5432.
+    env_file:
+      - .env
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"   # db to nazwa serwisu powyżej
     ports:
