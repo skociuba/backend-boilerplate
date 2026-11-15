@@ -23,6 +23,9 @@ npx prisma generate           # client → src/generated/prisma (gitignored)
   e.g. `feat/children-crud`, `feat-26998/history-krakow`.
   Types: feat fix chore refactor ci docs test perf style build revert hotfix.
   Never commit on `master`/`main`.
+- New branches never track a remote branch: from `origin/...` only with `--no-track`, no `--track`,
+  no upstream on `origin/master` (git-guard.py). `branch.autoSetupMerge=false` is set in every home repo;
+  the user sets the upstream on the first push (`git push -u origin <branch>`).
 - Commits: Conventional Commits (`feat: ...`, `fix(auth): [28917] ...`); prefer a lowercase subject.
 - Both checked before the command runs by `.claude/hooks/naming-guard.py` (same rules as the
   company repo). Husky + commitlint (`.husky/`, `commitlint.config.js`) hold the same rules for

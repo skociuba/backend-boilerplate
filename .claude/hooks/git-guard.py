@@ -8,13 +8,17 @@ Blocked: anything that changes a remote or ships code out:
 - git push/pull/send-email/lfs push, remote changes, git config remote.*,
   --no-verify (skips the husky hooks),
 - gh/glab other than reads, gh api, curl/wget writes to GitHub/GitLab,
-- npm/yarn/pnpm/bun publish, docker/podman push, ssh/scp/sftp/ftp, rsync to a host.
+- npm/yarn/pnpm/bun publish, docker/podman push, ssh/scp/sftp/ftp, rsync to a host,
+- a new branch tracking a remote branch (from origin/... without --no-track, --track,
+  upstream set to origin/master): a later push from the IDE would go straight to
+  that remote branch (the 12.11 incident in the company repo).
 Commands wrapped in bash -c "...", eval "...", $(...), backticks, sudo, env,
 xargs, timeout ... are checked too (same rules as the company repo's git-guard).
 """
 import json
 import re
 import shlex
+import subprocess
 import sys
 
 WRITE_SUBCOMMANDS = {"push", "pull", "submodule", "request-pull", "send-email"}
@@ -32,6 +36,13 @@ WRAPPERS = {"sudo", "env", "command", "exec", "time", "nohup", "xargs", "nice", 
 SHELL_OPERATORS = "();<>|&\n"
 # git global options that take a separate value: git -C <dir> push ...
 GLOBAL_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+PROTECTED = {"master", "main"}
+# git branch flags that do not create a branch
+BRANCH_NO_CREATE = {"-d", "-D", "--delete", "-l", "--list", "-a", "--all", "-r", "--remotes", "-v", "-vv",
+                    "--verbose", "--show-current", "--contains", "--merged", "--no-merged", "--unset-upstream",
+                    "--edit-description", "-m", "-M", "--move", "-c", "-C", "--copy"}
+CREATE_FLAGS = {"checkout": {"-b", "-B"}, "switch": {"-c", "-C", "--create", "--force-create"},
+                "worktree": {"-b", "-B"}}
 
 
 def deny(reason):
@@ -70,7 +81,51 @@ def strip_prefix(tokens):
     return tokens
 
 
-def check_git(args):
+def remote_names(cwd):
+    names = {"origin", "upstream"}
+    try:
+        out = subprocess.run(["git", "-C", cwd or ".", "remote"], capture_output=True, text=True, timeout=5)
+        names |= set(out.stdout.split())
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return names
+
+
+def remote_branch(ref, remotes):
+    # origin/master, remotes/origin/master, refs/remotes/origin/master -> "master"; else None
+    ref = ref.removeprefix("refs/").removeprefix("remotes/")
+    remote, _, branch = ref.partition("/")
+    return branch if remote in remotes and branch else None
+
+
+def check_tracking(sub, rest, cwd):
+    # Upstream inny niż branch o tej samej nazwie = push z IDE (Sync) idzie gdzie indziej,
+    # np. prosto na zdalnego mastera. Nowe branche bez upstreamu; pierwszy push robi użytkownik.
+    if sub not in {"checkout", "switch", "branch", "worktree"} or (sub == "worktree" and rest[:1] != ["add"]):
+        return
+    remotes = remote_names(cwd)
+    if any(a in {"-t", "--track"} or a.startswith("--track=") for a in rest):
+        deny(f"git {sub} --track sets an upstream; create the branch with --no-track, "
+             "the user sets the upstream on the first push (git push -u origin <branch>)")
+    if sub == "branch":
+        for i, a in enumerate(rest):
+            target = (rest[i + 1] if a in {"-u", "--set-upstream-to"} and i + 1 < len(rest)
+                      else a.split("=", 1)[1] if a.startswith("--set-upstream-to=") else None)
+            if target and remote_branch(target, remotes) in PROTECTED:
+                deny(f"upstream {target} would send this branch's pushes to {target}")
+        creating = any(not a.startswith("-") for a in rest) and not any(
+            a in BRANCH_NO_CREATE or a in {"-u", "--set-upstream-to"} or a.startswith(("--set-upstream-to=", "--format"))
+            for a in rest)
+    else:
+        creating = any(a in CREATE_FLAGS[sub] for a in rest)
+    if creating and "--no-track" not in rest:
+        start = next((a for a in rest if not a.startswith("-") and remote_branch(a, remotes)), None)
+        if start:
+            deny(f"a branch created from {start} tracks it, so a push from the IDE goes to {start}; "
+                 f"add --no-track (e.g. git {sub} {' '.join(rest)} --no-track)")
+
+
+def check_git(args, cwd=None):
     i = 0
     while i < len(args) and args[i].startswith("-"):
         i += 2 if args[i] in GLOBAL_OPTS_WITH_ARG else 1
@@ -88,6 +143,7 @@ def check_git(args):
         deny("git config remote.* changes remotes")
     if "--no-verify" in rest or (sub == "commit" and "-n" in rest):
         deny("--no-verify skips the repo's husky hooks (commitlint, branch names)")
+    check_tracking(sub, rest, cwd)
 
 
 def check_forge_cli(name, args):
@@ -97,19 +153,19 @@ def check_forge_cli(name, args):
         deny(f"{name} {' '.join(positional[:2])} is not a read-only command")
 
 
-def check_command(command, forge_mentioned):
+def check_command(command, forge_mentioned, cwd=None):
     for tokens in commands(command):
         # bash -c "git push", eval "git push": quoted text is a command of its own
         for tok in tokens:
             if re.search(r"\s", tok):
-                check_command(tok, forge_mentioned)
+                check_command(tok, forge_mentioned, cwd)
         tokens = strip_prefix(tokens)
         if not tokens:
             continue
         name = tokens[0].rsplit("/", 1)[-1]
         positional = [t for t in tokens[1:] if not t.startswith("-")]
         if name == "git":
-            check_git(tokens[1:])
+            check_git(tokens[1:], cwd)
         elif name in FORGE_CLIS:
             check_forge_cli(name, tokens[1:])
         elif name in HTTP_CLIENTS and forge_mentioned and any(HTTP_WRITE_FLAGS.match(t) for t in tokens[1:]):
@@ -129,7 +185,7 @@ def main():
     if data.get("tool_name") == "WebFetch":
         return  # WebFetch only reads
     command = (data.get("tool_input") or {}).get("command", "")
-    check_command(command, bool(FORGE_HOST_RE.search(command)))
+    check_command(command, bool(FORGE_HOST_RE.search(command)), data.get("cwd"))
 
 
 if __name__ == "__main__":

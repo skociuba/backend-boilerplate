@@ -1,5 +1,6 @@
 # WYŁĄCZONY — żeby włączyć, odkomentuj blok niżej (usuń "# " z początku linii).
-# Co robi: przy `git push` blokuje push na master/main i push brancha o złej nazwie.
+# Co robi: przy `git push` blokuje push na master/main, push lokalnego brancha pod inną
+# nazwą zdalną (np. feat/x → master, gdy upstream wskazuje na origin/master) i brancha o złej nazwie.
 # Claude i tak nie pushuje (.claude/hooks/git-guard.py); ten hook jest dla ciebie.
 # Prawdziwą blokadę master daje dopiero ruleset na GitHubie — ten da się obejść --no-verify.
 
@@ -18,6 +19,14 @@
 #
 #   # Usuwanie brancha zdalnego — nazwa nie ma znaczenia.
 #   [ "$local_sha" = "$zero" ] && continue
+#
+#   # Upstream na inny branch = push z IDE (Sync) ląduje gdzie indziej, niż myślisz.
+#   local_branch=${local_ref#refs/heads/}
+#   if [ "$local_branch" != "$local_ref" ] && [ "$local_branch" != "$branch" ]; then
+#     echo "✖ Push $local_branch → $branch zablokowany. Ustaw upstream na tę samą nazwę:"
+#     echo "  git push -u origin $local_branch"
+#     exit 1
+#   fi
 #
 #   check_branch_name "$branch" || exit 1
 # done
