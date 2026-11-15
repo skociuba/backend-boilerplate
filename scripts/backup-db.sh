@@ -29,12 +29,24 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-# set -a eksportuje KAŻDĄ zmienną zdefiniowaną przy source'owaniu .env, nie
-# tylko te, które sami wymienimy — prościej niż ręczne `export` per linia.
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+# NIE `source` — .env to format docker compose (KEY=VALUE), nie skrypt bashowy.
+# Wartość typu `EMAIL_FROM=Aplikacja <no-reply@x.pl>` jest dla compose zwykłym
+# stringiem, a dla basha przekierowaniem `<`/`>` i syntax errorem, który
+# wywalał cały deploy. Czytamy więc tylko dwa klucze, których potrzebujemy.
+read_env() {
+  local value
+  value=$(grep -E "^[[:space:]]*$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '\r')
+  # Zdejmij ewentualne otaczające cudzysłowy, tak jak robi to compose.
+  value="${value%\"}"; value="${value#\"}"
+  value="${value%\'}"; value="${value#\'}"
+  printf '%s' "$value"
+}
+POSTGRES_USER=$(read_env POSTGRES_USER)
+POSTGRES_DB=$(read_env POSTGRES_DB)
+if [ -z "$POSTGRES_USER" ] || [ -z "$POSTGRES_DB" ]; then
+  echo "Brak POSTGRES_USER lub POSTGRES_DB w $ENV_FILE." >&2
+  exit 1
+fi
 
 # Po etykietach, nie po nazwie: Compose v2 nazywa kontener <projekt>-db-1,
 # a v1 (deploy woła `docker-compose`) <projekt>_db_1, więc filtr po nazwie
