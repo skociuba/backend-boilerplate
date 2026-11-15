@@ -49,7 +49,8 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.yml,sql/,scripts/"
+          # sql/ już nie istnieje — schemat budują migracje Prismy, nie initdb
+          source: "docker-compose.yml,scripts/"
           target: "/var/www/backend-node"
 
       # Kolejność ma znaczenie: backup PRZED tym, jak cokolwiek zacznie się
@@ -64,7 +65,11 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          # set -e: ssh-action v0.1.x domyślnie (script_stop: false) leci dalej
+          # po błędzie — nieudany migrate deploy kończyłby się down+up nowego
+          # kodu na starej bazie zamiast zatrzymania deployu.
           script: |
+            set -e
             cd /var/www/backend-node
             chmod +x scripts/backup-db.sh
             ./scripts/backup-db.sh .

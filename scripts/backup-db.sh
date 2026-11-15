@@ -36,9 +36,21 @@ set -a
 source "$ENV_FILE"
 set +a
 
-CONTAINER=$(docker ps --filter "name=-db-1" --format "{{.Names}}" | head -1)
+# Po etykietach, nie po nazwie: Compose v2 nazywa kontener <projekt>-db-1,
+# a v1 (deploy woła `docker-compose`) <projekt>_db_1, więc filtr po nazwie
+# trafiał tylko w jedną wersję. working_dir zawęża do TEGO projektu — na VPS
+# stoją też inne compose'y i mogą mieć własny serwis `db`.
+PROJECT_DIR=$(cd "$TARGET_DIR" && pwd)
+CONTAINER=$(docker ps \
+  --filter "label=com.docker.compose.service=db" \
+  --filter "label=com.docker.compose.project.working_dir=$PROJECT_DIR" \
+  --format "{{.Names}}" | head -1)
+# Bardzo stary docker-compose v1 (sprzed 1.25) nie ustawia working_dir.
 if [ -z "$CONTAINER" ]; then
-  echo "Nie znalazłem działającego kontenera bazy (filtr: *-db-1)." >&2
+  CONTAINER=$(docker ps --format "{{.Names}}" | grep -E "^$(basename "$PROJECT_DIR" | tr -cd 'a-zA-Z0-9-')[-_]db[-_]1$" | head -1 || true)
+fi
+if [ -z "$CONTAINER" ]; then
+  echo "Nie znalazłem działającego kontenera bazy (serwis db w $PROJECT_DIR)." >&2
   exit 1
 fi
 
