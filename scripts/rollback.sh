@@ -12,7 +12,8 @@ set -euo pipefail
 #
 # Skąd wziąć <sha>: GitHub → zakładka Actions → poprzedni UDANY run →
 # krok "Build and push backend image" → w logu widać dokładny tag. Albo:
-# `git log --oneline` na branchu `deploy` — każdy commit tam = jeden obraz.
+# `git log --first-parent --oneline master` — każdy commit tam (merge PR-a
+# albo bezpośredni push) = jeden deploy = jeden obraz.
 #
 # Użycie: ./scripts/rollback.sh <sha> [katalog-z-docker-compose.yml]
 
@@ -42,4 +43,4 @@ IMAGE_TAG="$SHA" docker-compose up -d app
 
 echo "=== Gotowe. Sprawdź: docker-compose ps / docker logs <kontener> ==="
 echo "Obraz działa teraz na ${IMAGE} — NIE na :latest. Następny normalny"
-echo "deploy (push na branch 'deploy') wróci do :latest automatycznie."
+echo "deploy (merge do master) wróci do :latest automatycznie."

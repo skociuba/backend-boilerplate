@@ -30,7 +30,8 @@ npx prisma generate           # client → src/generated/prisma (gitignored)
 - Both checked before the command runs by `.claude/hooks/naming-guard.py` (same rules as the
   company repo). Husky + commitlint (`.husky/`, `commitlint.config.js`) hold the same rules for
   manual commits but are commented out for now. Never `--no-verify`.
-- Pushing `deploy` deploys to production (`.github/workflows/deploy.yaml`).
+- Pushing or merging to `master` deploys to production (`.github/workflows/deploy.yaml`,
+  test → build → deploy). The old `deploy` branch is no longer used.
 
 ## Rules
 
