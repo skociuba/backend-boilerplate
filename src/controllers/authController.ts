@@ -97,7 +97,11 @@ class AuthController {
 
     res.status(201).json({
       user,
-      message: "Konto utworzone. Sprawdź maila, aby je aktywować, a potem się zaloguj.",
+      // "także Spam": nadawca bez własnej domeny (Gmail SMTP) trafia u
+      // części odbiorców do spamu — lepiej powiedzieć to wprost, niż
+      // zostawić usera z poczuciem, że mail nie przyszedł.
+      message:
+        "Konto utworzone. Sprawdź maila (także folder Spam), aby je aktywować, a potem się zaloguj.",
     });
   });
 
