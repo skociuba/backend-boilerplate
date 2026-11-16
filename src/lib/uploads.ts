@@ -17,12 +17,14 @@ import { BadRequestError } from "./errors";
 export const UPLOADS_ROOT = path.join(process.cwd(), "uploads");
 export const AVATARS_DIR = path.join(UPLOADS_ROOT, "avatars");
 export const DOCUMENTS_DIR = path.join(UPLOADS_ROOT, "documents");
+export const POST_IMAGES_DIR = path.join(UPLOADS_ROOT, "posts");
 
 // Wywołane raz, przy starcie (index.ts) — multer sam NIE tworzy katalogów,
 // zapisanie pliku do nieistniejącego folderu po prostu wywaliłoby błąd.
 export const ensureUploadDirs = (): void => {
   fs.mkdirSync(AVATARS_DIR, { recursive: true });
   fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
+  fs.mkdirSync(POST_IMAGES_DIR, { recursive: true });
 };
 
 // Nazwa pliku na dysku to ZAWSZE losowy UUID + oryginalne rozszerzenie —
@@ -39,18 +41,19 @@ const diskStorage = (destination: string) =>
     },
   });
 
-const imageFileFilter = (
-  _req: Request,
-  file: Express.Multer.File,
-  cb: FileFilterCallback
-): void => {
-  const allowed = ["image/png", "image/jpeg", "image/webp"];
-  if (!allowed.includes(file.mimetype)) {
-    cb(new BadRequestError("Avatar musi być PNG, JPEG albo WebP"));
-    return;
-  }
-  cb(null, true);
-};
+// Fabryka, bo avatar i zdjęcie posta mają te same dozwolone typy, a różni
+// się tylko komunikat błędu. Bez SVG celowo: SVG to XML, który może
+// zawierać <script>, a pliki serwujemy statycznie z tej samej domeny.
+const imageFileFilter =
+  (label: string) =>
+  (_req: Request, file: Express.Multer.File, cb: FileFilterCallback): void => {
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowed.includes(file.mimetype)) {
+      cb(new BadRequestError(`${label} musi być PNG, JPEG albo WebP`));
+      return;
+    }
+    cb(null, true);
+  };
 
 const documentFileFilter = (
   _req: Request,
@@ -67,9 +70,17 @@ const documentFileFilter = (
 
 export const uploadAvatar = multer({
   storage: diskStorage(AVATARS_DIR),
-  fileFilter: imageFileFilter,
+  fileFilter: imageFileFilter("Avatar"),
   limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB
 }).single("avatar");
+
+// Większy limit niż avatar: zdjęcie posta wyświetla się szeroko w oknie
+// z pełnym postem, nie jako mała miniatura.
+export const uploadPostImage = multer({
+  storage: diskStorage(POST_IMAGES_DIR),
+  fileFilter: imageFileFilter("Zdjęcie"),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+}).single("image");
 
 export const uploadDocument = multer({
   storage: diskStorage(DOCUMENTS_DIR),

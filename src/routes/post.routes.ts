@@ -1,6 +1,7 @@
 import { Router } from "express";
 import PostController from "../controllers/postController";
 import { requireCurrentUser } from "../middleware/currentUser";
+import { uploadPostImage } from "../lib/uploads";
 
 const postRoutes = Router();
 const postController = new PostController();
@@ -14,6 +15,17 @@ postRoutes.delete(
   requireCurrentUser,
   postController.deletePost
 );
+
+// Zdjęcie posta: multer (uploadPostImage) parsuje multipart przed
+// kontrolerem; sprawdzenie "czy to Twój post" jest w kontrolerze, który
+// sprząta plik, gdy post okaże się cudzy.
+postRoutes.put(
+  "/posts/:id/image",
+  requireCurrentUser,
+  uploadPostImage,
+  postController.uploadImage
+);
+postRoutes.delete("/posts/:id/image", requireCurrentUser, postController.deleteImage);
 
 // relacja N:M post <-> tag — jeden PUT ustawiający cały zestaw naraz
 // (pasuje do multi-selecta z checkboxami). Tagowanie własnego posta wymaga

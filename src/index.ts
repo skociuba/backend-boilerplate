@@ -9,7 +9,7 @@ import childRoutes from "./routes/child.routes";
 import authRoutes from "./routes/auth.routes";
 import { attachCurrentUser } from "./middleware/currentUser";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
-import { AVATARS_DIR, ensureUploadDirs } from "./lib/uploads";
+import { AVATARS_DIR, POST_IMAGES_DIR, ensureUploadDirs } from "./lib/uploads";
 
 const app = express();
 // Konfigurowalny port — żeby dało się odpalić kilka branchy naraz (np.
@@ -37,6 +37,8 @@ app.use(attachCurrentUser);
 // mają własny, chroniony endpoint (GET /users/:id/profile/document
 // w userProfile.routes.ts), bo w odróżnieniu od avatara mogą być prywatne.
 app.use("/uploads/avatars", express.static(AVATARS_DIR));
+// Zdjęcia postów jw. — posty są publiczne, więc ich zdjęcia też.
+app.use("/uploads/posts", express.static(POST_IMAGES_DIR));
 
 app.use(authRoutes);
 app.use(userRoutes);
