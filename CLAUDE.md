@@ -32,6 +32,8 @@ npx prisma generate           # client → src/generated/prisma (gitignored)
   manual commits but are commented out for now. Never `--no-verify`.
 - Pushing or merging to `master` deploys to production (`.github/workflows/deploy.yaml`,
   test → build → deploy). The old `deploy` branch is no longer used.
+- Every PR to `master` runs `test` and `build` (image built, not pushed, no deploy);
+  branch protection on `master` requires both checks to pass before merge.
 
 ## Rules
 
