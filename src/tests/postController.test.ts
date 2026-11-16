@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import PostController from "../controllers/postController";
 import prisma from "../db";
+import { ForbiddenError } from "../lib/errors";
+import { deleteUploadedFile } from "../lib/uploads";
 
 // Ten sam wzorzec co userController.test.ts — jawna fabryka mocka, żeby
 // nie konstruować prawdziwego PrismaClienta. $transaction dostaje tablicę
@@ -8,10 +10,14 @@ import prisma from "../db";
 jest.mock("../db", () => ({
   __esModule: true,
   default: {
-    posts: { findMany: jest.fn(), count: jest.fn() },
+    posts: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     $transaction: jest.fn((queries: unknown[]) => Promise.all(queries)),
   },
 }));
+
+// Prawdziwe usuwanie z dysku nie jest tu potrzebne — sprawdzamy tylko, CO
+// kontroler każe usunąć
+jest.mock("../lib/uploads", () => ({ deleteUploadedFile: jest.fn() }));
 
 const findMany = prisma.posts.findMany as jest.Mock;
 const count = prisma.posts.count as jest.Mock;
@@ -20,6 +26,7 @@ const dbPost = {
   id: 1,
   title: "Hello",
   content: "World",
+  image_path: null as string | null,
   created_at: new Date("2026-11-01T10:00:00Z"),
   users: { id: 7, name: "Alice", user_profiles: null },
   post_tags: [{ tags: { id: 3, name: "node" } }],
@@ -96,6 +103,59 @@ describe("PostController.getIndex", () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: [{ title: "asc" }, { id: "asc" }] })
+    );
+  });
+});
+
+describe("PostController.uploadImage", () => {
+  const controller = new PostController();
+  const findUnique = prisma.posts.findUnique as jest.Mock;
+  const update = prisma.posts.update as jest.Mock;
+  let json: jest.Mock;
+  let res: Partial<Response>;
+  let next: jest.Mock;
+
+  const request = (currentUserId: number) =>
+    ({
+      params: { id: "1" },
+      currentUserId,
+      file: { path: "/app/uploads/posts/new.png", filename: "new.png" },
+    }) as unknown as Request;
+
+  beforeEach(() => {
+    json = jest.fn();
+    res = { status: jest.fn().mockReturnValue({ json }) };
+    next = jest.fn();
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  it("usuwa wgrany plik, gdy post należy do kogoś innego", async () => {
+    findUnique.mockResolvedValue({ user_id: 99 });
+
+    await controller.uploadImage(request(7), res as Response, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
+    expect(deleteUploadedFile).toHaveBeenCalledWith("/app/uploads/posts/new.png");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("zapisuje nowe zdjęcie i dopiero potem kasuje poprzednie", async () => {
+    findUnique
+      .mockResolvedValueOnce({ user_id: 7 }) // requireOwnPost
+      .mockResolvedValueOnce({ image_path: "/uploads/posts/old.png" });
+    update.mockResolvedValue({ ...dbPost, image_path: "/uploads/posts/new.png" });
+
+    await controller.uploadImage(request(7), res as Response, next);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { image_path: "/uploads/posts/new.png" } })
+    );
+    expect(deleteUploadedFile).toHaveBeenCalledWith(
+      expect.stringMatching(/uploads\/posts\/old\.png$/)
+    );
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ image_url: "/uploads/posts/new.png" })
     );
   });
 });

@@ -2,8 +2,10 @@ import { Request, Response } from "express";
 import prisma from "../db";
 import { Prisma } from "../generated/prisma/client";
 import { asyncHandler } from "../lib/asyncHandler";
-import { ForbiddenError, NotFoundError } from "../lib/errors";
+import path from "path";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../lib/errors";
 import { parsePagination, singleQueryParam } from "../lib/queryParams";
+import { deleteUploadedFile } from "../lib/uploads";
 
 // Introspekcja dała nam JAWNĄ tabelę pośrednią (post_tags), więc Prisma
 // zwraca tagi zagnieżdżone: post.post_tags[].tags.name — nie płasko jak w
@@ -26,6 +28,9 @@ const toApiShape = (post: PostWithRelations) => ({
   id: post.id,
   title: post.title,
   content: post.content,
+  // Ścieżka względna (/uploads/posts/...), jak author_avatar_url — front
+  // dokleja adres API przez getUploadUrl
+  image_url: post.image_path,
   created_at: post.created_at,
   author_id: post.users.id,
   author_name: post.users.name,
@@ -196,8 +201,67 @@ class PostController {
     const id = parseInt(req.params.id);
     await requireOwnPost(id, req.currentUserId);
 
-    await prisma.posts.delete({ where: { id } });
+    const deleted = await prisma.posts.delete({ where: { id } });
+    // Wiersz w bazie i plik na dysku to dwa osobne zasoby — usunięcie posta
+    // nie usuwa zdjęcia samo
+    if (deleted.image_path) deleteUploadedFile(path.join(process.cwd(), deleted.image_path));
     res.status(200).json({ message: "Post deleted successfully" });
+  });
+
+  // PUT /posts/:id/image — multipart, pole "image". Multer (routes) zapisuje
+  // plik na dysk ZANIM tu wejdziemy, czyli także wtedy, gdy post jest cudzy
+  // albo nie istnieje — w takim przypadku plik trzeba sprzątnąć, inaczej
+  // każdy zalogowany mógłby zapychać dysk plikami podpiętymi pod nic.
+  public uploadImage = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    if (!req.file) throw new BadRequestError("Brak pliku (pole 'image')");
+
+    const uploadedPath = req.file.path;
+    try {
+      await requireOwnPost(id, req.currentUserId);
+    } catch (error) {
+      deleteUploadedFile(uploadedPath);
+      throw error;
+    }
+
+    const previous = await prisma.posts.findUnique({
+      where: { id },
+      select: { image_path: true },
+    });
+    const post = await prisma.posts.update({
+      where: { id },
+      data: { image_path: `/uploads/posts/${req.file.filename}` },
+      include: POST_INCLUDE,
+    });
+
+    // Stary plik dopiero PO udanym zapisie — gdyby update się nie udał,
+    // baza dalej wskazywałaby na stary plik, więc musi on istnieć
+    if (previous?.image_path) {
+      deleteUploadedFile(path.join(process.cwd(), previous.image_path));
+    }
+
+    res.status(200).json(toApiShape(post));
+  });
+
+  // DELETE /posts/:id/image — usuwa samo zdjęcie, post zostaje
+  public deleteImage = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const id = parseInt(req.params.id);
+    await requireOwnPost(id, req.currentUserId);
+
+    const previous = await prisma.posts.findUnique({
+      where: { id },
+      select: { image_path: true },
+    });
+    const post = await prisma.posts.update({
+      where: { id },
+      data: { image_path: null },
+      include: POST_INCLUDE,
+    });
+    if (previous?.image_path) {
+      deleteUploadedFile(path.join(process.cwd(), previous.image_path));
+    }
+
+    res.status(200).json(toApiShape(post));
   });
 
   // PUT /posts/:id/tags  { names: string[] } — USTAWIA cały zestaw tagów
