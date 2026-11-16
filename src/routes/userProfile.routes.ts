@@ -2,6 +2,8 @@ import { Router } from "express";
 import UserProfileController from "../controllers/userProfileController";
 import { requireCurrentUser } from "../middleware/currentUser";
 import { uploadAvatar, uploadDocument } from "../lib/uploads";
+import { profileSchema } from "../lib/profileValidation";
+import { validateBody } from "../middleware/validate";
 
 const userProfileRoutes = Router();
 const userProfileController = new UserProfileController();
@@ -17,6 +19,7 @@ userProfileRoutes.get(
 userProfileRoutes.put(
   "/users/:id/profile",
   requireCurrentUser,
+  validateBody(profileSchema),
   userProfileController.upsert
 );
 userProfileRoutes.delete(

@@ -47,13 +47,15 @@ model tags {
   post_tags post_tags[]
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+// Bez PESEL-u: publiczna aplikacja demonstracyjna nie ma podstawy, żeby
+// zbierać numer identyfikacyjny (RODO art. 5.1.c, minimalizacja danych).
+// Wszystkie pola są opcjonalne — wiersz powstaje przy pierwszym zapisie
+// profilu albo uploadzie avatara/dokumentu, niczego nie trzeba podawać.
 model user_profiles {
-  user_id                Int      @id
-  pesel                  String   @unique @db.VarChar(11)
-  date_of_birth          DateTime @db.Date
-  phone                  String?  @db.VarChar(20)
-  bio                    String?  @db.Text
+  user_id                Int       @id
+  date_of_birth          DateTime? @db.Date
+  phone                  String?   @db.VarChar(20)
+  bio                    String?   @db.Text
   // Pliki same leżą na dysku (uploads/), tu trzymamy TYLKO ścieżkę — ten
   // sam wzorzec jak przy haśle/refresh tokenie: nigdy nie trzymaj w bazie
   // czegoś, co można trzymać poza nią jako referencję. document_original_name
@@ -62,7 +64,7 @@ model user_profiles {
   avatar_path            String?
   document_path          String?
   document_original_name String?
-  users                  users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                  users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 // Dwie role na start — wystarczające, żeby zademonstrować autoryzację
@@ -158,8 +160,8 @@ model children {
 // ============================================================
 model Client {
   id      Int            @id @default(autoincrement()) // PK
-  profile ClientProfile?                               // 1:1 (FK po stronie ClientProfile)
-  orders  Order[]                                      // 1:N (FK po stronie Order)
+  profile ClientProfile? // 1:1 (FK po stronie ClientProfile)
+  orders  Order[] // 1:N (FK po stronie Order)
 
   @@map("client")
 }
@@ -168,9 +170,10 @@ model Client {
 // CLIENT_PROFILE
 // ============================================================
 model ClientProfile {
-  clientId Int    @id @map("client_id")                // PK + FK -> client.id => relacja 1:1
+  clientId Int    @id @map("client_id") // PK + FK -> client.id => relacja 1:1
   client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-                                                       // profil bez klienta nie ma sensu -> Cascade
+
+  // profil bez klienta nie ma sensu -> Cascade
   @@map("client_profile")
 }
 
@@ -179,13 +182,13 @@ model ClientProfile {
 // ============================================================
 model Order {
   id       Int            @id @default(autoincrement()) // PK
-  clientId Int            @map("client_id")             // FK -> client.id
+  clientId Int            @map("client_id") // FK -> client.id
   client   Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
-                                                        // nie da się usunąć klienta, który ma zamówienia
-  items    OrderProduct[]                               // 1:N z tabelą łączącą
+  // nie da się usunąć klienta, który ma zamówienia
+  items    OrderProduct[] // 1:N z tabelą łączącą
 
-  @@index([clientId])                                   // indeks na FK
-  @@map("orders")                                       // "order" to słowo zarezerwowane w SQL
+  @@index([clientId]) // indeks na FK
+  @@map("orders") // "order" to słowo zarezerwowane w SQL
 }
 
 // ============================================================
@@ -193,7 +196,7 @@ model Order {
 // ============================================================
 model Product {
   id         Int            @id @default(autoincrement()) // PK
-  orderItems OrderProduct[]                               // 1:N z tabelą łączącą
+  orderItems OrderProduct[] // 1:N z tabelą łączącą
 
   @@map("product")
 }
@@ -202,14 +205,14 @@ model Product {
 // ORDER_PRODUCT – tabela łącząca N:M Order <-> Product
 // ============================================================
 model OrderProduct {
-  orderId   Int     @map("order_id")                    // FK -> orders.id  (część PK)
-  productId Int     @map("product_id")                  // FK -> product.id (część PK)
+  orderId   Int     @map("order_id") // FK -> orders.id  (część PK)
+  productId Int     @map("product_id") // FK -> product.id (część PK)
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-                                                        // usunięcie zamówienia usuwa jego pozycje
+  // usunięcie zamówienia usuwa jego pozycje
   product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
-                                                        // nie da się usunąć produktu, który był zamawiany
+  // nie da się usunąć produktu, który był zamawiany
 
-  @@id([orderId, productId])                            // PK złożony
-  @@index([productId])                                  // indeks na drugi FK (pierwszy pokrywa PK)
+  @@id([orderId, productId]) // PK złożony
+  @@index([productId]) // indeks na drugi FK (pierwszy pokrywa PK)
   @@map("order_product")
 }
