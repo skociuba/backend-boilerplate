@@ -7,7 +7,7 @@ set -euo pipefail
 # aplikacja padła sekundę później (zły .env, brak bazy, błąd przy starcie).
 # Teraz job jest czerwony, a w logu CI od razu widać ostatnie linie logów.
 #
-# Używany przez .github/workflows/deploy.yaml i scripts/rollback.sh.
+# Używany przez .github/workflows/deploy.yml i scripts/rollback.sh.
 # Użycie: ./scripts/wait-healthy.sh [katalog-z-docker-compose.yml]
 
 TARGET_DIR="${1:-$(dirname "$0")/..}"

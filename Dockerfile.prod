@@ -27,7 +27,7 @@ RUN npm install --only=production
 
 COPY --from=builder /usr/src/app/dist ./dist
 
-# BEZ TEGO: `prisma migrate deploy` (patrz .github/workflows/deploy.yaml)
+# BEZ TEGO: `prisma migrate deploy` (patrz .github/workflows/deploy.yml)
 # nie miałby skąd wiedzieć, jakie migracje istnieją — schema.prisma +
 # migrations/*/migration.sql w ogóle nie trafiały do tego obrazu, tylko do
 # stage 1 (builder). seed.ts jedzie w tym samym folderze, ale nigdy się nie
@@ -53,7 +53,7 @@ USER node
 EXPOSE 3000
 
 # Docker co 10 s pyta /health (aplikacja + baza). Status healthy/unhealthy
-# czyta skrypt deployu (.github/workflows/deploy.yaml) i rollback.sh.
+# czyta skrypt deployu (.github/workflows/deploy.yml) i rollback.sh.
 # node zamiast wget/curl: w obrazie alpine nie trzeba nic doinstalowywać,
 # a fetch jest wbudowany w Node 22. start-period daje czas na start
 # aplikacji, zanim nieudane próby zaczną się liczyć.

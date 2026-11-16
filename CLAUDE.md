@@ -34,10 +34,13 @@ npx prisma generate           # client → src/generated/prisma (gitignored)
 - Both checked before the command runs by `.claude/hooks/naming-guard.py` (same rules as the
   company repo). Husky + commitlint (`.husky/`, `commitlint.config.js`) hold the same rules for
   manual commits but are commented out for now. Never `--no-verify`.
-- Pushing or merging to `master` deploys to production (`.github/workflows/deploy.yaml`,
-  test → build → deploy). The old `deploy` branch is no longer used.
-- Every PR to `master` runs `test` and `build` (image built, not pushed, no deploy);
-  branch protection on `master` requires both checks to pass before merge.
+- Production deploys only from releases (continuous delivery): merging to `master` runs
+  `.github/workflows/ci.yml` (test, integration, build → image `:<sha>`), and release-please
+  keeps a "chore(master): release X.Y.Z" PR open. Merging THAT PR tags `vX.Y.Z`, retags the image
+  `:X.Y.Z` + `:latest` and deploys it (`release.yml` → `deploy.yml`). Redeploy/rollback:
+  Actions → "Deploy Backend" → Run workflow → version. The old `deploy` branch is no longer used.
+- Every PR to `master` runs `test`, `integration` and `build` (image built, not pushed);
+  branch protection on `master` requires them to pass before merge.
 
 ## Rules
 

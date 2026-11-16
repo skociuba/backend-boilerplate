@@ -1,10 +1,9 @@
-name: Deploy Backend
+name: CI
 
-# Produkcja idzie z master (jak frontend) — osobna gałąź deploy tylko
-# duplikowała master i trzeba było ją ręcznie doganiać. workflow_dispatch
-# pozwala odpalić deploy ponownie z zakładki Actions bez pustego commita.
-# pull_request: testy i build obrazu (bez push i deployu) na każdym PR do
-# master — błąd ma wyjść przed merge'em, a nie dopiero na master.
+# Testy i obraz dla każdego commita na master oraz każdego PR-a do master.
+# NIE wdraża — produkcja idzie tylko z wydania (release.yml → deploy.yml),
+# czyli po merge'u PR-a "chore(master): release X.Y.Z". Merge zwykłego
+# PR-a to "gotowe do wydania", a nie "już na produkcji".
 on:
   push:
     branches:
@@ -12,19 +11,18 @@ on:
   pull_request:
     branches:
       - master
-  workflow_dispatch:
 
 # Jeden przebieg naraz na gałąź. Na PR nowy push anuluje stary przebieg
-# (liczy się tylko najnowszy commit), ale na master nie — przerwany w
-# połowie deploy (po down, przed up) zostawiłby produkcję wyłączoną, więc
-# kolejne deploye czekają w kolejce.
+# (liczy się tylko najnowszy commit), ale na master nie — release.yml czeka
+# na obraz :sha z KAŻDEGO commita release'owego, więc przerwany build
+# zostawiłby wydanie bez obrazu do wdrożenia.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Skoro każdy merge do master ląduje na produkcji, testy muszą go móc
-  # zatrzymać, zanim powstanie obraz. Prisma w testach jest zamockowana,
+  # Testy muszą móc zatrzymać commit, zanim powstanie obraz, który potem
+  # może trafić na produkcję. Prisma w testach jest zamockowana,
   # więc baza w CI nie jest potrzebna; generate jest, bo src/generated
   # jest gitignorowany, a bez niego tsc i importy klienta się wywalają.
   test:
@@ -105,7 +103,9 @@ jobs:
         run: npm run test:integration
 
   # Na PR obraz też się buduje (zepsuty Dockerfile wychodzi przed merge'em),
-  # ale nie trafia do Docker Huba — :latest to zawsze wersja z master.
+  # ale nie trafia do Docker Huba. Z master idzie tylko :<sha> — :latest
+  # przesuwa release.yml dopiero przy wydaniu, więc :latest = to, co jest
+  # na produkcji, a nie ostatni merge.
   build:
     name: build
     needs: [test, integration]
@@ -139,53 +139,4 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            sebastiankociuba/node-backend:latest
             sebastiankociuba/node-backend:${{ github.sha }}
-
-  deploy:
-    name: Deploy Backend to VPS
-    needs: [build]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          # sql/ już nie istnieje — schemat budują migracje Prismy, nie initdb
-          source: "docker-compose.yml,scripts/"
-          target: "/var/www/backend-node"
-
-      # Kolejność ma znaczenie: backup PRZED tym, jak cokolwiek zacznie się
-      # zmieniać (żeby mieć czym się odkręcić, jeśli migracja coś popsuje) →
-      # pull nowego obrazu → migrate deploy TYM obrazem na WCIĄŻ żyjącej
-      # starej bazie (`docker-compose run` nie dotyka działających
-      # kontenerów, tylko odpala jednorazowy, z tą samą siecią/env co
-      # serwis `app`) → dopiero teraz down+up, czyli realne przełączenie.
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          # set -e: ssh-action v0.1.x domyślnie (script_stop: false) leci dalej
-          # po błędzie — nieudany migrate deploy kończyłby się down+up nowego
-          # kodu na starej bazie zamiast zatrzymania deployu.
-          # wait-healthy.sh na końcu: deploy jest zielony dopiero, gdy aplikacja
-          # odpowiada na /health razem z bazą, a nie zaraz po `up -d`.
-          script: |
-            set -e
-            cd /var/www/backend-node
-            chmod +x scripts/*.sh
-            ./scripts/backup-db.sh .
-            sudo docker-compose pull
-            sudo docker-compose run --rm app npx prisma migrate deploy
-            sudo docker-compose down
-            sudo docker-compose up -d
-            sudo ./scripts/wait-healthy.sh .
-            sudo docker image prune -f
