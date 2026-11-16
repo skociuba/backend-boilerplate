@@ -7,6 +7,7 @@ import tagRoutes from "./routes/tag.routes";
 import userProfileRoutes from "./routes/userProfile.routes";
 import childRoutes from "./routes/child.routes";
 import authRoutes from "./routes/auth.routes";
+import healthRoutes from "./routes/health.routes";
 import { attachCurrentUser } from "./middleware/currentUser";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { AVATARS_DIR, POST_IMAGES_DIR, ensureUploadDirs } from "./lib/uploads";
@@ -25,6 +26,10 @@ const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 app.set("trust proxy", 1);
 
 ensureUploadDirs();
+
+// Przed resztą middleware'ów: Docker pyta o /health co kilka sekund, nie ma
+// sensu za każdym razem parsować body, ciastek i tokenu
+app.use(healthRoutes);
 
 app.use(express.json());
 // req.cookies — potrzebne przed attachCurrentUser/authRoutes, bo refresh
