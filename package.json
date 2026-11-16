@@ -8,6 +8,7 @@
     "build": "tsc",
     "serve": "node dist/index.js",
     "test": "jest",
+    "test:integration": "jest --config jest.integration.config.js",
     "prepare": "husky || true",
     "make-admin": "ts-node src/scripts/makeAdmin.ts"
   },

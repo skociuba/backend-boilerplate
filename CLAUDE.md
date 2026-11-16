@@ -10,6 +10,10 @@ docker compose up -d          # db (host port 5433) + maildev (http://localhost:
 npm start                     # ts-node src/index.ts
 npx tsc --noEmit              # typecheck
 npm test                      # jest (src/tests/, Prisma mocked)
+# integration tests: real Postgres, DB name must contain "test" (tables are truncated)
+docker run -d --name vps2-pg-test -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=vps2_test -p 127.0.0.1:5434:5432 postgres:15
+DATABASE_URL=postgres://test:test@127.0.0.1:5434/vps2_test npm run test:integration
 npx prisma migrate dev --name <name>   # new migration after editing prisma/schema.prisma
 npx prisma generate           # client → src/generated/prisma (gitignored)
 ```
