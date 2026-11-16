@@ -54,11 +54,61 @@ jobs:
       - name: Run tests
         run: npm test
 
+  # Testy na prawdziwym Postgresie: baza budowana od zera migracjami
+  # (`prisma migrate deploy`, jak na produkcji), potem żądania HTTP do
+  # aplikacji. Łapią to, czego testy z mockiem Prismy nie widzą: SQL,
+  # transakcje, kaskady, migracje. Równolegle z `test`, żeby PR nie czekał
+  # dwa razy dłużej.
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Ta sama wersja co na produkcji (docker-compose.yml)
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: vps2_test
+        ports:
+          - 5432:5432
+        # Job czeka, aż Postgres faktycznie przyjmuje połączenia
+        options: >-
+          --health-cmd "pg_isready -U test -d vps2_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Nazwa bazy musi zawierać "test" — inaczej testy odmówią startu
+      # (src/tests/integration/setup/guard.ts)
+      DATABASE_URL: postgres://test:test@localhost:5432/vps2_test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run integration tests
+        run: npm run test:integration
+
   # Na PR obraz też się buduje (zepsuty Dockerfile wychodzi przed merge'em),
   # ale nie trafia do Docker Huba — :latest to zawsze wersja z master.
   build:
     name: build
-    needs: [test]
+    needs: [test, integration]
     runs-on: ubuntu-latest
 
     steps:
