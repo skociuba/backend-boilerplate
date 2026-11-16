@@ -2,25 +2,9 @@ import path from "path";
 import { Request, Response } from "express";
 import prisma from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../lib/errors";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../lib/errors";
+import { ProfileInput } from "../lib/profileValidation";
 import { deleteUploadedFile } from "../lib/uploads";
-import { Prisma } from "../generated/prisma/client";
-
-const isUniqueViolation = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
-
-const isForeignKeyViolation = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003";
-
-// 23514 (check_violation na PESEL) nie jest "znanym" błędem dla Prismy —
-// CHECK nie jest częścią schema.prisma (patrz komentarz przy modelu
-// user_profiles), więc prawdziwy kod Postgresa trzeba wyciągnąć z
-// error.meta.driverAdapterError.cause.code — sprawdzone naocznie
-// (console.log całego error), nie zgadnięte z dokumentacji.
-const pgErrorCode = (error: unknown): string | undefined => {
-  const err = error as { meta?: { driverAdapterError?: { cause?: { code?: string } } } };
-  return err.meta?.driverAdapterError?.cause?.code;
-};
 
 // Wspólne dla upsert/uploadAvatar/uploadDocument/deleteProfile/downloadDocument —
 // profil to dane prywatne, więc każda operacja na nim zaczyna się od tego
@@ -33,52 +17,69 @@ const requireOwnProfile = (req: Request, message: string): number => {
   return userId;
 };
 
+// Kształt odpowiedzi GET/PUT: name z users + pola profilu (null, jeśli
+// wiersza w user_profiles jeszcze nie ma). Front dostaje zawsze ten sam
+// obiekt — nie musi rozróżniać "brak profilu" (404) od "pusty profil".
+const toProfileResponse = (
+  userId: number,
+  name: string,
+  profile: {
+    date_of_birth: Date | null;
+    phone: string | null;
+    avatar_path: string | null;
+    document_original_name: string | null;
+  } | null
+) => ({
+  user_id: userId,
+  name,
+  date_of_birth: profile?.date_of_birth ? profile.date_of_birth.toISOString().slice(0, 10) : null,
+  phone: profile?.phone ?? null,
+  avatar_path: profile?.avatar_path ?? null,
+  // Sama nazwa, nie ścieżka na dysku — dokument pobiera się przez chroniony
+  // endpoint downloadDocument, front nie ma po co znać document_path.
+  document_original_name: profile?.document_original_name ?? null,
+});
+
 class UserProfileController {
-  // GET /users/:id/profile — profil to dane prywatne (PESEL, telefon), więc
-  // w odróżnieniu od postów NIE jest publiczny: tylko właściciel go czyta
+  // GET /users/:id/profile — profil to dane prywatne (telefon, data
+  // urodzenia, dokument), więc w odróżnieniu od postów NIE jest publiczny:
+  // tylko właściciel go czyta
   public getByUserId = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = requireOwnProfile(req, "Możesz przeglądać tylko własny profil.");
 
-    const profile = await prisma.user_profiles.findUnique({ where: { user_id: userId } });
-    if (!profile) throw new NotFoundError("Profile not found");
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { name: true, user_profiles: true },
+    });
+    if (!user) throw new NotFoundError("User not found");
 
-    res.status(200).json(profile);
+    res.status(200).json(toProfileResponse(userId, user.name, user.user_profiles));
   });
 
-  // PUT /users/:id/profile — upsert: relacja jest 1:1, więc "zapisz profil"
-  // znaczy "stwórz, albo nadpisz jeśli już istnieje" w jednym zapytaniu.
-  // Prisma ma to jako natywną operację .upsert() — nie trzeba ręcznego
-  // ON CONFLICT.
+  // PUT /users/:id/profile { name, date_of_birth?, phone? } — body już
+  // przeszło profileSchema (validateBody w routes). Imię i nazwisko jest w
+  // users, reszta w user_profiles — $transaction, żeby nie zapisać jednego
+  // bez drugiego. Upsert, bo relacja jest 1:1: "zapisz profil" = stwórz albo
+  // nadpisz, bez ręcznego ON CONFLICT.
   public upsert = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = requireOwnProfile(req, "Możesz edytować tylko własny profil.");
 
-    const { pesel, date_of_birth, phone } = req.body;
+    const { name, date_of_birth, phone } = req.body as ProfileInput;
+    const profileData = {
+      date_of_birth: date_of_birth ? new Date(date_of_birth) : null,
+      phone: phone ?? null,
+    };
 
-    try {
-      const profile = await prisma.user_profiles.upsert({
+    const [user, profile] = await prisma.$transaction([
+      prisma.users.update({ where: { id: userId }, data: { name }, select: { name: true } }),
+      prisma.user_profiles.upsert({
         where: { user_id: userId },
-        update: { pesel, date_of_birth: new Date(date_of_birth), phone },
-        create: { user_id: userId, pesel, date_of_birth: new Date(date_of_birth), phone },
-      });
-      res.status(200).json(profile);
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new ConflictError("PESEL already used by another user");
-      }
-      if (isForeignKeyViolation(error)) {
-        throw new NotFoundError("User not found");
-      }
+        update: profileData,
+        create: { user_id: userId, ...profileData },
+      }),
+    ]);
 
-      const pgCode = pgErrorCode(error);
-      if (pgCode === "23514") {
-        throw new BadRequestError("PESEL must be exactly 11 digits");
-      }
-      if (pgCode === "22007" || pgCode === "22008") {
-        throw new BadRequestError("date_of_birth must be in YYYY-MM-DD format");
-      }
-
-      throw error;
-    }
+    res.status(200).json(toProfileResponse(userId, user.name, profile));
   });
 
   // PUT /users/:id/profile/avatar — multipart/form-data, pole "avatar"
@@ -97,14 +98,16 @@ class UserProfileController {
     });
 
     const avatar_path = `/uploads/avatars/${req.file.filename}`;
-    const profile = await prisma.user_profiles.update({
+    // upsert, nie update: wszystkie pola profilu są opcjonalne, więc avatar
+    // można wgrać, zanim ktokolwiek zapisze formularz profilu
+    const profile = await prisma.user_profiles.upsert({
       where: { user_id: userId },
-      data: { avatar_path },
+      update: { avatar_path },
+      create: { user_id: userId, avatar_path },
     });
 
-    // Stary plik kasujemy PO udanym update — jeśli update by się nie udał
-    // (np. profil jeszcze nie istnieje, update rzuciłby P2025), nowo
-    // wgrany plik zostałby osierocony na dysku, ale stary nadal by istniał
+    // Stary plik kasujemy PO udanym zapisie — gdyby zapis się nie udał,
+    // stary avatar musi nadal istnieć, bo baza wciąż na niego wskazuje
     if (existing?.avatar_path) {
       deleteUploadedFile(path.join(process.cwd(), existing.avatar_path));
     }
@@ -126,9 +129,11 @@ class UserProfileController {
     });
 
     const document_path = `/uploads/documents/${req.file.filename}`;
-    const profile = await prisma.user_profiles.update({
+    const documentData = { document_path, document_original_name: req.file.originalname };
+    const profile = await prisma.user_profiles.upsert({
       where: { user_id: userId },
-      data: { document_path, document_original_name: req.file.originalname },
+      update: documentData,
+      create: { user_id: userId, ...documentData },
     });
 
     if (existing?.document_path) {

@@ -53,7 +53,6 @@ async function main() {
     update: {},
     create: {
       user_id: alice.id,
-      pesel: "90010112345",
       date_of_birth: new Date("1990-01-01"),
       phone: "500600700",
     },
