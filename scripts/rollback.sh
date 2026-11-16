@@ -15,7 +15,11 @@ set -euo pipefail
 # `git log --first-parent --oneline master` — każdy commit tam (merge PR-a
 # albo bezpośredni push) = jeden deploy = jeden obraz.
 #
-# Użycie: ./scripts/rollback.sh <sha> [katalog-z-docker-compose.yml]
+# Albo po numerze wersji: release.yml dokleja do obrazu z wydania tag :X.Y.Z
+# (lista wersji: zakładka Releases na GitHubie albo CHANGELOG.md), np.
+# ./scripts/rollback.sh 1.1.0
+#
+# Użycie: ./scripts/rollback.sh <sha-albo-wersja> [katalog-z-docker-compose.yml]
 
 if [ -z "${1:-}" ]; then
   echo "Użycie: $0 <sha-obrazu-do-przywrócenia> [katalog]" >&2
