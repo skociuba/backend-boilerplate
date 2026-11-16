@@ -3,6 +3,7 @@ import prisma from "../db";
 import { Prisma } from "../generated/prisma/client";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ForbiddenError, NotFoundError } from "../lib/errors";
+import { parsePagination, singleQueryParam } from "../lib/queryParams";
 
 // Introspekcja dała nam JAWNĄ tabelę pośrednią (post_tags), więc Prisma
 // zwraca tagi zagnieżdżone: post.post_tags[].tags.name — nie płasko jak w
@@ -57,14 +58,72 @@ const requireOwnPost = async (postId: number, currentUserId: number | undefined)
   }
 };
 
+// Whitelist jak w childController — sortować wolno tylko po tym, co
+// faktycznie chcemy wystawić, nigdy po nazwie kolumny wziętej z URL-a.
+const SORTABLE_FIELDS = ["created_at", "title"] as const;
+type SortableField = (typeof SORTABLE_FIELDS)[number];
+
+// Dłuższa fraza nic nie znajdzie, a ILIKE po długim wzorcu na każdym
+// wierszu to niepotrzebny koszt — przycinamy zamiast odrzucać zapytanie.
+const MAX_SEARCH_LENGTH = 100;
+
+const POST_INCLUDE = {
+  users: { include: { user_profiles: true } },
+  post_tags: { include: { tags: true } },
+} as const;
+
 class PostController {
-  // GET /posts — lista wszystkich postów wraz z autorem (1:N) i tagami (N:M)
+  // GET /posts?page=1&limit=9&sortBy=created_at&order=desc&q=prisma&tagId=3
+  //
+  // Publiczny feed ze strony głównej. Odpowiedź { items, pagination } —
+  // ten sam kształt co GET /children, więc front ma jeden wzorzec listy.
   public getIndex = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const posts = await prisma.posts.findMany({
-      include: { users: { include: { user_profiles: true } }, post_tags: { include: { tags: true } } },
-      orderBy: { created_at: "desc" },
+    const { page, limit, skip } = parsePagination(
+      singleQueryParam(req.query.page),
+      singleQueryParam(req.query.limit),
+      { defaultLimit: 9, maxLimit: 50 }
+    );
+
+    const rawSortBy = singleQueryParam(req.query.sortBy);
+    const sortBy: SortableField = SORTABLE_FIELDS.includes(rawSortBy as SortableField)
+      ? (rawSortBy as SortableField)
+      : "created_at";
+    // Domyślnie od najnowszych — feed czyta się od góry
+    const order: "asc" | "desc" = singleQueryParam(req.query.order) === "asc" ? "asc" : "desc";
+
+    const q = singleQueryParam(req.query.q)?.trim().slice(0, MAX_SEARCH_LENGTH);
+    const tagId = parseInt(singleQueryParam(req.query.tagId) as string);
+
+    // Brak parametru = brak filtra; oba filtry łączą się przez AND
+    const where: Prisma.postsWhereInput = {};
+    if (q) {
+      where.OR = [
+        { title: { contains: q, mode: "insensitive" } },
+        { content: { contains: q, mode: "insensitive" } },
+      ];
+    }
+    if (Number.isInteger(tagId) && tagId > 0) {
+      where.post_tags = { some: { tag_id: tagId } };
+    }
+
+    // id jako drugi klucz sortowania: przy równych created_at/title
+    // kolejność bez niego jest w Postgresie niedeterministyczna, więc ten
+    // sam post mógłby wypaść na dwóch stronach albo nie pojawić się wcale
+    const [posts, total] = await prisma.$transaction([
+      prisma.posts.findMany({
+        where,
+        include: POST_INCLUDE,
+        orderBy: [{ [sortBy]: order }, { id: order }],
+        skip,
+        take: limit,
+      }),
+      prisma.posts.count({ where }),
+    ]);
+
+    res.status(200).json({
+      items: posts.map(toApiShape),
+      pagination: { page, limit, total },
     });
-    res.status(200).json(posts.map(toApiShape));
   });
 
   // GET /users/:id/posts — "moje posty", naprawdę wymuszone przez backend,
@@ -84,7 +143,7 @@ class PostController {
 
     const posts = await prisma.posts.findMany({
       where: { user_id: userId },
-      include: { users: { include: { user_profiles: true } }, post_tags: { include: { tags: true } } },
+      include: POST_INCLUDE,
       orderBy: { created_at: "desc" },
     });
     res.status(200).json(posts.map(toApiShape));
@@ -95,7 +154,7 @@ class PostController {
     const id = parseInt(req.params.id);
     const post = await prisma.posts.findUnique({
       where: { id },
-      include: { users: { include: { user_profiles: true } }, post_tags: { include: { tags: true } } },
+      include: POST_INCLUDE,
     });
 
     if (!post) throw new NotFoundError("Post not found");

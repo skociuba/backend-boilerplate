@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import prisma from "../db";
 import { Prisma } from "../generated/prisma/client";
 import { asyncHandler } from "../lib/asyncHandler";
+import { parsePagination, singleQueryParam } from "../lib/queryParams";
 
 // Whitelist kolumn po których wolno sortować — NIGDY nie bierz nazwy
 // kolumny bezpośrednio z query stringa bez sprawdzenia. Z Prismą literówka
@@ -10,19 +11,6 @@ import { asyncHandler } from "../lib/asyncHandler";
 // niekoniecznie po tym, co chcesz udostępnić.
 const SORTABLE_FIELDS = ["id", "name", "age", "date_of_birth"] as const;
 type SortableField = (typeof SORTABLE_FIELDS)[number];
-
-// req.query[klucz] w Express to string | string[] | ParsedQs | ParsedQs[] |
-// undefined — NIE zawsze string. Zduplikowany parametr w URL (?limit=3&limit=5)
-// staje się tablicą; poprzedni kod robił `as string` na ślepo, więc dla
-// tablicy dostawał "3,5" i parseInt wyciągał z tego samo "3". Ta funkcja
-// zawsze bierze OSTATNIĄ wartość (tak przyjęło się w Express/query-string —
-// późniejszy wpis wygrywa) i tylko jeśli to faktycznie string.
-function singleQueryParam(value: unknown): string | undefined {
-  if (Array.isArray(value)) {
-    return singleQueryParam(value[value.length - 1]);
-  }
-  return typeof value === "string" ? value : undefined;
-}
 
 class ChildController {
   // POST /children — proste tworzenie, żeby mieć na czym ćwiczyć listing
@@ -54,12 +42,10 @@ class ChildController {
     const rawMinAge = singleQueryParam(req.query.minAge);
     const rawMaxAge = singleQueryParam(req.query.maxAge);
 
-    // paginacja — offset-based (page/limit), najprostszy wariant.
-    // Math.max/min to "clamp": źle podany page/limit nie wywala błędu,
-    // tylko ląduje w sensownych granicach (strona 1, limit 1..100)
-    const page = Math.max(1, parseInt(rawPage as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(rawLimit as string) || 10));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(rawPage, rawLimit, {
+      defaultLimit: 10,
+      maxLimit: 100,
+    });
 
     // sortowanie — sprawdzone względem whitelisty, domyślnie po id
     const sortBy: SortableField = SORTABLE_FIELDS.includes(rawSortBy as SortableField)
