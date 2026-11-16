@@ -126,12 +126,16 @@ jobs:
           # set -e: ssh-action v0.1.x domyślnie (script_stop: false) leci dalej
           # po błędzie — nieudany migrate deploy kończyłby się down+up nowego
           # kodu na starej bazie zamiast zatrzymania deployu.
+          # wait-healthy.sh na końcu: deploy jest zielony dopiero, gdy aplikacja
+          # odpowiada na /health razem z bazą, a nie zaraz po `up -d`.
           script: |
             set -e
             cd /var/www/backend-node
-            chmod +x scripts/backup-db.sh
+            chmod +x scripts/*.sh
             ./scripts/backup-db.sh .
             sudo docker-compose pull
             sudo docker-compose run --rm app npx prisma migrate deploy
             sudo docker-compose down
             sudo docker-compose up -d
+            sudo ./scripts/wait-healthy.sh .
+            sudo docker image prune -f

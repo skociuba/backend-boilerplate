@@ -38,9 +38,28 @@ echo "=== Rollback do obrazu: ${IMAGE} ==="
 "$TARGET_DIR/scripts/backup-db.sh" "$TARGET_DIR"
 
 cd "$TARGET_DIR"
-IMAGE_TAG="$SHA" docker-compose pull app
-IMAGE_TAG="$SHA" docker-compose up -d app
 
-echo "=== Gotowe. Sprawdź: docker-compose ps / docker logs <kontener> ==="
+# Compose v2 (`docker compose`) jeśli jest, inaczej v1 (`docker-compose`,
+# tak jak teraz na VPS) — ten sam wybór co w deployu frontendu.
+if docker compose version >/dev/null 2>&1; then
+  DC="docker compose"
+else
+  DC="docker-compose"
+fi
+
+IMAGE_TAG="$SHA" $DC pull app
+
+# Najpierw usuń SAM kontener aplikacji, potem postaw nowy. docker-compose
+# v1 przy podmianie istniejącego kontenera (`up -d app` na działającym)
+# wywala się na nowszym Dockerze z "KeyError: 'ContainerConfig'". Na świeżo,
+# bez starego kontenera, ten błąd nie występuje. --no-deps: baza (db) nie
+# jest ruszana, rollback dotyczy tylko kodu.
+$DC rm --stop --force app
+IMAGE_TAG="$SHA" $DC up -d --no-deps app
+
+# Ten sam warunek "gotowe" co w deployu: aplikacja odpowiada razem z bazą
+"$TARGET_DIR/scripts/wait-healthy.sh" "$TARGET_DIR"
+
+echo "=== Gotowe. ==="
 echo "Obraz działa teraz na ${IMAGE} — NIE na :latest. Następny normalny"
 echo "deploy (merge do master) wróci do :latest automatycznie."
