@@ -3,11 +3,24 @@ name: Deploy Backend
 # Produkcja idzie z master (jak frontend) — osobna gałąź deploy tylko
 # duplikowała master i trzeba było ją ręcznie doganiać. workflow_dispatch
 # pozwala odpalić deploy ponownie z zakładki Actions bez pustego commita.
+# pull_request: testy i build obrazu (bez push i deployu) na każdym PR do
+# master — błąd ma wyjść przed merge'em, a nie dopiero na master.
 on:
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
+
+# Jeden przebieg naraz na gałąź. Na PR nowy push anuluje stary przebieg
+# (liczy się tylko najnowszy commit), ale na master nie — przerwany w
+# połowie deploy (po down, przed up) zostawiłby produkcję wyłączoną, więc
+# kolejne deploye czekają w kolejce.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Skoro każdy merge do master ląduje na produkcji, testy muszą go móc
@@ -15,6 +28,8 @@ jobs:
   # więc baza w CI nie jest potrzebna; generate jest, bo src/generated
   # jest gitignorowany, a bez niego tsc i importy klienta się wywalają.
   test:
+    # Stała nazwa joba = nazwa wymaganego checka w branch protection
+    name: test
     runs-on: ubuntu-latest
 
     steps:
@@ -39,32 +54,40 @@ jobs:
       - name: Run tests
         run: npm test
 
+  # Na PR obraz też się buduje (zepsuty Dockerfile wychodzi przed merge'em),
+  # ale nie trafia do Docker Huba — :latest to zawsze wersja z master.
   build:
+    name: build
     needs: [test]
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.prod
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
+          # Cache warstw w GitHub Actions: zmiana w kodzie nie przebudowuje od
+          # zera warstwy z npm install, jeśli package-lock się nie zmienił
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             sebastiankociuba/node-backend:latest
             sebastiankociuba/node-backend:${{ github.sha }}
@@ -72,10 +95,11 @@ jobs:
   deploy:
     name: Deploy Backend to VPS
     needs: [build]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Copy files to server
         uses: appleboy/scp-action@v0.1.4
