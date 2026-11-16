@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Backup bazy PRZED każdym deployem (patrz .github/workflows/deploy.yaml) —
+# Backup bazy PRZED każdym deployem (patrz .github/workflows/deploy.yml) —
 # jeśli migracja coś popsuje, masz czym to odkręcić. Uruchamiany też osobno,
 # z crona, na wypadek wszystkiego innego (błąd w aplikacji, wycięty rekord
 # przez pomyłkę) — niezależnie od tego, czy akurat był deploy.
