@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/skociuba/backend-boilerplate/compare/v1.1.0...v1.1.1) (2026-11-16)
+
+
+### CI/CD
+
+* deploy to production only from releases ([7a61dfc](https://github.com/skociuba/backend-boilerplate/commit/7a61dfc307c6fc38dda9e1103c1634f7d27765d2))
+* deploy to production only from releases ([2842afe](https://github.com/skociuba/backend-boilerplate/commit/2842afe9a94629ccd43c4d8100445d0761cc76f5))
+
 ## [1.1.0](https://github.com/skociuba/backend-boilerplate/compare/v1.0.0...v1.1.0) (2026-11-16)
 
 
