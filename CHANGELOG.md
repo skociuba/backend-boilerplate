@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/skociuba/backend-boilerplate/compare/v1.1.2...v1.1.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* keep an empty request body as {} under express 5 ([43e3099](https://github.com/skociuba/backend-boilerplate/commit/43e30991ca3f54312d4231b35b525795c315da57))
+
 ## [1.1.2](https://github.com/skociuba/backend-boilerplate/compare/v1.1.1...v1.1.2) (2026-11-17)
 
 
