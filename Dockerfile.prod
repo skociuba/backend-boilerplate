@@ -57,6 +57,11 @@ RUN mkdir -p uploads && chown -R node:node uploads
 
 USER node
 
+# Ustawione w obrazie, a nie w .env na serwerze: od tego zależy m.in. flaga
+# Secure ciastka z refresh tokenem (src/lib/refreshCookie.ts). Bez tego
+# produkcja wysyłała je bez Secure, więc mogło polecieć zwykłym HTTP.
+ENV NODE_ENV=production
+
 EXPOSE 3000
 
 # Docker co 10 s pyta /health (aplikacja + baza). Status healthy/unhealthy
