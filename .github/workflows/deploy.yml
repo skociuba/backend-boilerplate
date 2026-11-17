@@ -56,12 +56,12 @@ jobs:
       # docker-compose.yml i skrypty z TAGA wydania, nie z master — wdrażana
       # wersja dostaje dokładnie tę konfigurację, z którą została wydana
       - name: Checkout the release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: v${{ inputs.version }}
 
       - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.4
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -76,7 +76,7 @@ jobs:
       # kontenerów, tylko odpala jednorazowy, z tą samą siecią/env co
       # serwis `app`) → dopiero teraz down+up, czyli realne przełączenie.
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v0.1.10
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
