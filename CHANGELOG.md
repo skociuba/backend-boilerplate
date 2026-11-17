@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.4](https://github.com/skociuba/backend-boilerplate/compare/v1.1.3...v1.1.4) (2026-11-17)
+
+
+### Bug Fixes
+
+* set node_env=production in the production image ([19d1df9](https://github.com/skociuba/backend-boilerplate/commit/19d1df9ce9048aa3c8c887ab0aa539d8e28b9e44))
+* set node_env=production in the production image ([89d12e3](https://github.com/skociuba/backend-boilerplate/commit/89d12e3c3f9bd2e7f0eff9d49902d4d4097747e3))
+
 ## [1.1.3](https://github.com/skociuba/backend-boilerplate/compare/v1.1.2...v1.1.3) (2026-11-17)
 
 
