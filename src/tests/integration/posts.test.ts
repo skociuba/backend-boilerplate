@@ -102,4 +102,18 @@ describe("posty na prawdziwej bazie", () => {
     // Same tagi zostają — to wspólny słownik, nie własność posta
     expect(await prisma.tags.count()).toBe(2);
   });
+
+  // Express 5 nie ustawia już req.body = {} dla żądania bez body (było tak w
+  // 4.x) — kontrolery destrukturyzujące req.body padały wtedy z 500.
+  // Bez body PUT /posts/:id/tags ma zadziałać jak pusta lista tagów.
+  it("żądanie bez body nie kończy się błędem serwera", async () => {
+    const ala = await createVerifiedUser("ala@example.com");
+    const { token } = await http.login(ala.email, ala.password);
+    const postId = await createPost(token, "Z tagami", "treść", ["node"]);
+
+    const res = await http.put(`/posts/${postId}/tags`, { token });
+
+    expect(res.status).toBe(200);
+    expect(await prisma.post_tags.count()).toBe(0);
+  });
 });

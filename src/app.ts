@@ -31,6 +31,15 @@ ensureUploadDirs();
 app.use(healthRoutes);
 
 app.use(express.json());
+// Express 5 zostawia req.body = undefined, gdy żądanie nie ma body albo ma
+// inny Content-Type (w 4.x zawsze było {}). Kontrolery robią
+// `const { name } = req.body` i bez tego żądanie bez body kończyło się
+// 500 zamiast normalnej walidacji. Multer (uploady) ustawia body sam,
+// później, więc go to nie dotyczy.
+app.use((req, _res, next) => {
+  req.body ??= {};
+  next();
+});
 // req.cookies — potrzebne przed attachCurrentUser/authRoutes, bo refresh
 // token teraz przyjeżdża jako httpOnly cookie, nie w body
 app.use(cookieParser());
