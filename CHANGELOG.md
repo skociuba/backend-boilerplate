@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.2](https://github.com/skociuba/backend-boilerplate/compare/v1.1.1...v1.1.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **deps:** patch vulnerable dependencies and upgrade zod to v4 ([6b80fc4](https://github.com/skociuba/backend-boilerplate/commit/6b80fc48c61d4d63acbf2ff7df89b0e8cc7e8869))
+
+
+### CI/CD
+
+* audit dependencies, scan the image with trivy and enable dependabot ([2bcbe74](https://github.com/skociuba/backend-boilerplate/commit/2bcbe7492e91da8edf81aaca51e42e79a0359f86))
+* bump the actions group across 1 directory with 9 updates ([9c4d881](https://github.com/skociuba/backend-boilerplate/commit/9c4d8812a788f7fe7351054cc6464b6c44d6ee64))
+* bump the actions group across 1 directory with 9 updates ([578debe](https://github.com/skociuba/backend-boilerplate/commit/578debe91e9539391bf6fcd3d6a48b98abffbd7e))
+* **dependabot:** skip major updates of typescript, @types/node and node ([774a599](https://github.com/skociuba/backend-boilerplate/commit/774a5996b5fe79391dd885a73d769b8977ed902c))
+* **dependabot:** skip major updates of typescript, @types/node and node ([73e9696](https://github.com/skociuba/backend-boilerplate/commit/73e96962949a75f8cbfd04b0f9118afad010a3fa))
+
 ## [1.1.1](https://github.com/skociuba/backend-boilerplate/compare/v1.1.0...v1.1.1) (2026-11-16)
 
 
