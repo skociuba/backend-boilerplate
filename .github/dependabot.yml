@@ -1,0 +1,40 @@
+# Dependabot otwiera PR-y z aktualizacjami. Każdy przechodzi te same checki
+# co zwykły PR (test + audyt, integration, build ze skanem Trivy), więc
+# merge jest bezpieczny, kiedy wszystko jest zielone.
+version: 2
+updates:
+  # Paczki npm: minor i patch w JEDNYM zbiorczym PR-ze na tydzień zamiast
+  # kilkunastu osobnych (tak zarósł frontend). Major idzie osobno, bo
+  # zwykle wymaga zmian w kodzie (jak zod 3 → 4).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    # Conventional Commits: "build(deps): ..." — release-please chowa typ
+    # build w CHANGELOG, więc aktualizacje nie zaśmiecają listy zmian
+    commit-message:
+      prefix: build
+      include: scope
+
+  # Wersje akcji w workflowach (actions/checkout@v4 itd.)
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  # Obraz bazowy node:22-alpine w Dockerfile.prod
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build

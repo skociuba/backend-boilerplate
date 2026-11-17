@@ -52,6 +52,13 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Znane podatności w zależnościach produkcyjnych (te, które jadą do
+      # obrazu). --audit-level=high: moderate/low nie blokują PR-a, bo
+      # często dotyczą ścieżek, których aplikacja nie używa — te łata
+      # Dependabot (.github/dependabot.yml) w swoim tempie.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
   # Testy na prawdziwym Postgresie: baza budowana od zera migracjami
   # (`prisma migrate deploy`, jak na produkcji), potem żądania HTTP do
   # aplikacji. Łapią to, czego testy z mockiem Prismy nie widzą: SQL,
@@ -128,15 +135,43 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push backend image
+      # Najpierw build do lokalnego Dockera (load), skan, dopiero potem push
+      # — obraz z podatnością HIGH/CRITICAL nie trafia do rejestru, więc nie
+      # da się go też wydać ani wdrożyć.
+      - name: Build backend image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.prod
-          push: ${{ github.event_name != 'pull_request' }}
+          load: true
           # Cache warstw w GitHub Actions: zmiana w kodzie nie przebudowuje od
           # zera warstwy z npm install, jeśli package-lock się nie zmienił
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: |
-            sebastiankociuba/node-backend:${{ github.sha }}
+          tags: sebastiankociuba/node-backend:${{ github.sha }}
+
+      # Trivy jako obraz przypięty do digestu, a nie aquasecurity/trivy-action
+      # z tagiem: tagi tej akcji zostały w 2026 przejęte i podmienione na
+      # kradnące sekrety — tag można przesunąć, digestu nie.
+      # --ignore-unfixed: blokujemy tylko to, co da się naprawić (jest
+      # poprawiona wersja); podatność bez łatki zablokowałaby każdy PR, a
+      # nie ma czego zaktualizować.
+      - name: Scan image for vulnerabilities (Trivy)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            "sebastiankociuba/node-backend:${{ github.sha }}"
+
+      # Ten sam build drugi raz, ale wszystkie warstwy są już w cache, więc
+      # to tylko wysłanie gotowego obrazu do rejestru
+      - name: Push backend image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.prod
+          push: true
+          cache-from: type=gha
+          tags: sebastiankociuba/node-backend:${{ github.sha }}

@@ -98,7 +98,7 @@ jobs:
             echo "=== Deploy wersji $VERSION ==="
             ./scripts/backup-db.sh .
             sudo IMAGE_TAG="$VERSION" docker-compose pull
-            sudo IMAGE_TAG="$VERSION" docker-compose run --rm app npx prisma migrate deploy
+            sudo IMAGE_TAG="$VERSION" docker-compose run --rm app ./node_modules/.bin/prisma migrate deploy
             sudo IMAGE_TAG="$VERSION" docker-compose down
             sudo IMAGE_TAG="$VERSION" docker-compose up -d
             sudo ./scripts/wait-healthy.sh .
