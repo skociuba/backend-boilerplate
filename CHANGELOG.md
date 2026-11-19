@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/skociuba/backend-boilerplate/compare/v1.2.1...v1.2.2) (2026-11-19)
+
+
+### CI/CD
+
+* require approval before production deploys ([60480c2](https://github.com/skociuba/backend-boilerplate/commit/60480c2bc9bb88363beccce16ba1be17a458675f))
+* require approval before production deploys ([3d36a3d](https://github.com/skociuba/backend-boilerplate/commit/3d36a3d2afa0b8ec4a6e078e074b818af7d102a8))
+
 ## [1.2.1](https://github.com/skociuba/backend-boilerplate/compare/v1.2.0...v1.2.1) (2026-11-19)
 
 
