@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/skociuba/backend-boilerplate/compare/v1.1.4...v1.2.0) (2026-11-19)
+
+
+### Features
+
+* encrypted offsite backups with a weekly restore test ([7db3748](https://github.com/skociuba/backend-boilerplate/commit/7db3748c4032e9fbab00930a0c8e798f514a3df8))
+* encrypted offsite backups with a weekly restore test ([b4ab45f](https://github.com/skociuba/backend-boilerplate/commit/b4ab45f02c84455955e0db3ea2054d901b40c483))
+
 ## [1.1.4](https://github.com/skociuba/backend-boilerplate/compare/v1.1.3...v1.1.4) (2026-11-17)
 
 
