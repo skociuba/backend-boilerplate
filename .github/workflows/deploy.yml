@@ -89,6 +89,8 @@ jobs:
           # kodu na starej bazie zamiast zatrzymania deployu.
           # sudo IMAGE_TAG=...: sudo czyści środowisko, więc zmienną trzeba
           # podać mu wprost; docker-compose.yml czyta ${IMAGE_TAG:-latest}.
+          # sudo przy backupie: konfiguracja kopii poza serwerem
+          # (/etc/vps2-backup, klucz do B2) jest czytelna tylko dla roota.
           # wait-healthy.sh na końcu: deploy jest zielony dopiero, gdy aplikacja
           # odpowiada na /health razem z bazą, a nie zaraz po `up -d`.
           script: |
@@ -96,7 +98,7 @@ jobs:
             cd /var/www/backend-node
             chmod +x scripts/*.sh
             echo "=== Deploy wersji $VERSION ==="
-            ./scripts/backup-db.sh .
+            sudo ./scripts/backup-db.sh .
             sudo IMAGE_TAG="$VERSION" docker-compose pull
             sudo IMAGE_TAG="$VERSION" docker-compose run --rm app ./node_modules/.bin/prisma migrate deploy
             sudo IMAGE_TAG="$VERSION" docker-compose down

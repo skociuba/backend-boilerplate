@@ -1,0 +1,143 @@
+name: Backup restore test
+
+# Backup, z którego nikt nigdy nie próbował niczego odtworzyć, to tylko
+# nadzieja. Co tydzień ten workflow robi to, co trzeba by zrobić po utracie
+# serwera: pobiera najnowszą kopię z Backblaze B2, odszyfrowuje ją,
+# odtwarza w pustym Postgresie i sprawdza, czy dane są na miejscu.
+# Czerwony przebieg = coś jest nie tak z kopiami (nie ma świeżych, nie da
+# się ich odszyfrować albo odtworzyć) — lepiej dowiedzieć się teraz niż
+# w dniu awarii.
+#
+# Kopie robi i wysyła scripts/backup-db.sh (cron na serwerze + każdy deploy).
+on:
+  schedule:
+    # Poniedziałek 6:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore-test:
+    name: restore-test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Ta sama wersja co na produkcji (docker-compose.yml)
+        image: postgres:15
+        env:
+          POSTGRES_USER: restore
+          POSTGRES_PASSWORD: restore
+          POSTGRES_DB: restore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U restore -d restore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # rclone czyta konfigurację zdalnego magazynu ze zmiennych
+      # RCLONE_CONFIG_<NAZWA>_* — nie trzeba pliku rclone.conf. Klucz B2
+      # tylko do odczytu: ten workflow nie może niczego skasować.
+      RCLONE_CONFIG_B2_TYPE: b2
+      RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_READ_KEY_ID }}
+      RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_READ_APP_KEY }}
+      BUCKET: ${{ vars.BACKUP_BUCKET }}
+      PGHOST: localhost
+      PGUSER: restore
+      PGPASSWORD: restore
+      PGDATABASE: restore
+      # Cron robi kopię codziennie — starsza niż 2 dni znaczy, że przestał
+      MAX_AGE_HOURS: 48
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install age and rclone
+        run: sudo apt-get update -q && sudo apt-get install -y -q age rclone
+
+      # Klucz prywatny age istnieje tylko tu (sekret repo) i u właściciela
+      # — na serwerze jest wyłącznie klucz publiczny do szyfrowania
+      - name: Write decryption key
+        env:
+          BACKUP_AGE_KEY: ${{ secrets.BACKUP_AGE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$BACKUP_AGE_KEY" > "$RUNNER_TEMP/age.key"
+
+      - name: Download and decrypt the latest backups
+        run: |
+          set -euo pipefail
+          latest() { rclone lsf "b2:$BUCKET/$1/" | sort | tail -1; }
+          DB=$(latest db)
+          UPLOADS=$(latest uploads)
+          if [ -z "$DB" ]; then echo "::error::Brak kopii bazy w b2:$BUCKET/db/"; exit 1; fi
+          echo "Najnowsza kopia bazy: $DB"
+          echo "Najnowsza kopia plików: ${UPLOADS:-brak}"
+
+          # Wiek z nazwy pliku (backup_RRRRMMDD_GGMMSS.sql.gz.age), czas serwera
+          STAMP=$(echo "$DB" | sed -E 's/^backup_([0-9]{8})_([0-9]{2})([0-9]{2})([0-9]{2}).*/\1 \2:\3:\4/')
+          AGE_HOURS=$(( ( $(date -u +%s) - $(date -u -d "$STAMP" +%s) ) / 3600 ))
+          echo "Wiek kopii: ${AGE_HOURS} h"
+          if [ "$AGE_HOURS" -gt "$MAX_AGE_HOURS" ]; then
+            echo "::error::Najnowsza kopia ma ${AGE_HOURS} h (limit ${MAX_AGE_HOURS} h) — cron na serwerze nie działa albo wysyłka do B2 się nie udaje"
+            exit 1
+          fi
+
+          rclone copyto "b2:$BUCKET/db/$DB" "$RUNNER_TEMP/db.sql.gz.age"
+          age -d -i "$RUNNER_TEMP/age.key" -o "$RUNNER_TEMP/db.sql.gz" "$RUNNER_TEMP/db.sql.gz.age"
+          gzip -t "$RUNNER_TEMP/db.sql.gz"
+
+          if [ -n "$UPLOADS" ]; then
+            rclone copyto "b2:$BUCKET/uploads/$UPLOADS" "$RUNNER_TEMP/uploads.tar.gz.age"
+            age -d -i "$RUNNER_TEMP/age.key" -o "$RUNNER_TEMP/uploads.tar.gz" "$RUNNER_TEMP/uploads.tar.gz.age"
+          fi
+
+      # ON_ERROR_STOP: bez tego psql leci dalej po błędzie i "udane"
+      # odtworzenie mogłoby mieć połowę tabel
+      - name: Restore into an empty database
+        run: gunzip -c "$RUNNER_TEMP/db.sql.gz" | psql -q -v ON_ERROR_STOP=1 > /dev/null
+
+      - name: Check the restored data
+        run: |
+          set -euo pipefail
+          q() { psql -tAc "$1"; }
+
+          APPLIED=$(q "SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL")
+          BROKEN=$(q "SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NULL OR rolled_back_at IS NOT NULL")
+          USERS=$(q "SELECT count(*) FROM users")
+          POSTS=$(q "SELECT count(*) FROM posts")
+          echo "Migracje: $APPLIED zastosowanych, $BROKEN niedokończonych"
+          echo "Wiersze: users=$USERS posts=$POSTS"
+
+          # Każda migracja z kopii musi istnieć w repo — inaczej kopia
+          # pochodzi z bazy, której schematu ten kod nie zna
+          for name in $(q "SELECT migration_name FROM _prisma_migrations"); do
+            if [ ! -d "prisma/migrations/$name" ]; then
+              echo "::error::Migracja $name jest w kopii, ale nie ma jej w prisma/migrations"
+              exit 1
+            fi
+          done
+
+          if [ "$BROKEN" -ne 0 ]; then echo "::error::W kopii są niedokończone migracje"; exit 1; fi
+          if [ "$APPLIED" -eq 0 ] || [ "$USERS" -eq 0 ]; then
+            echo "::error::Kopia jest pusta (brak migracji albo użytkowników)"
+            exit 1
+          fi
+
+      - name: Check the uploads archive
+        run: |
+          if [ ! -f "$RUNNER_TEMP/uploads.tar.gz" ]; then
+            echo "::warning::Brak kopii plików (uploads) w B2"
+            exit 0
+          fi
+          echo "Plików w archiwum: $(tar tzf "$RUNNER_TEMP/uploads.tar.gz" | grep -vc '/$')"
+
+      - name: Remove decryption key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/age.key" "$RUNNER_TEMP"/*.sql.gz "$RUNNER_TEMP"/*.tar.gz
