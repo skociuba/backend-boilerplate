@@ -61,8 +61,8 @@ if [ -z "$POSTGRES_USER" ] || [ -z "$POSTGRES_DB" ]; then
 fi
 
 # Po etykietach, nie po nazwie: Compose v2 nazywa kontener <projekt>-db-1,
-# a v1 (deploy woła `docker-compose`) <projekt>_db_1, więc filtr po nazwie
-# trafiał tylko w jedną wersję. working_dir zawęża do TEGO projektu — na VPS
+# a v1 (do 2026 na VPS) <projekt>_db_1, więc filtr po nazwie trafiał
+# tylko w jedną wersję. working_dir zawęża do TEGO projektu — na VPS
 # stoją też inne compose'y i mogą mieć własny serwis `db`.
 PROJECT_DIR=$(cd "$TARGET_DIR" && pwd)
 find_container() {

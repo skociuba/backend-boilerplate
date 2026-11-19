@@ -42,23 +42,18 @@ echo "=== Rollback do obrazu: ${IMAGE} ==="
 
 cd "$TARGET_DIR"
 
-# Compose v2 (`docker compose`) jeśli jest, inaczej v1 (`docker-compose`,
-# tak jak teraz na VPS) — ten sam wybór co w deployu frontendu.
-if docker compose version >/dev/null 2>&1; then
-  DC="docker compose"
-else
-  DC="docker-compose"
+# Tylko Compose v2 (`docker compose`). Stary docker-compose v1 przy
+# podmianie działającego kontenera wywalał się na nowszym Dockerze z
+# "KeyError: 'ContainerConfig'" — rollback, czyli dokładnie podmiana
+# kontenera, nie działał wtedy, kiedy był potrzebny.
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Brak Compose v2 (docker compose). Na Ubuntu: apt-get install docker-compose-v2" >&2
+  exit 1
 fi
 
-IMAGE_TAG="$SHA" $DC pull app
-
-# Najpierw usuń SAM kontener aplikacji, potem postaw nowy. docker-compose
-# v1 przy podmianie istniejącego kontenera (`up -d app` na działającym)
-# wywala się na nowszym Dockerze z "KeyError: 'ContainerConfig'". Na świeżo,
-# bez starego kontenera, ten błąd nie występuje. --no-deps: baza (db) nie
-# jest ruszana, rollback dotyczy tylko kodu.
-$DC rm --stop --force app
-IMAGE_TAG="$SHA" $DC up -d --no-deps app
+IMAGE_TAG="$SHA" docker compose pull app
+# --no-deps: baza (db) nie jest ruszana, rollback dotyczy tylko kodu
+IMAGE_TAG="$SHA" docker compose up -d --no-deps app
 
 # Ten sam warunek "gotowe" co w deployu: aplikacja odpowiada razem z bazą
 "$TARGET_DIR/scripts/wait-healthy.sh" "$TARGET_DIR"
