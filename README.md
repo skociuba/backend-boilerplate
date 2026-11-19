@@ -30,13 +30,13 @@ Using Docker Compose will spin up both the server and the PostgreSQL database lo
 1. **Build the Docker containers**:
 
    ```sh
-   docker-compose build
+   docker compose build
    ```
 
 2. **Start the containers:**:
 
    ```sh
-   docker-compose up
+   docker compose up
    ```
 
 ### Stopping Docker Compose:
@@ -44,14 +44,14 @@ Using Docker Compose will spin up both the server and the PostgreSQL database lo
 a. **Stop the containers but keep the data intact:**:
 
 ```sh
-docker-compose down
+docker compose down
 ```
 
 b. **Stop the containers and remove the data:**:
 This action will remove all the data you've added to the database. If you want to keep working with the same data, do not delete the volume. Alternatively, you should ensure the data is re-added by including it in the initial script that runs when the database starts (these scripts are located in the `sql` folder).
 
 ```sh
-docker-compose down -v
+docker compose down -v
 ```
 
 ### Running Tests

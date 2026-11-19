@@ -28,13 +28,13 @@ Using Docker Compose will allow you to run the server and database locally. Foll
 1. **Build the containers:**:
 
    ```sh
-   docker-compose build
+   docker compose build
    ```
 
 2. **Start the containers**:
 
    ```sh
-   docker-compose up
+   docker compose up
    ```
 
 3. **Stop Docker Compose**:
@@ -42,13 +42,13 @@ Using Docker Compose will allow you to run the server and database locally. Foll
    a. **Without removing volumes (to keep your data)**:
 
    ```sh
-    docker-compose down
+    docker compose down
    ```
 
    b. **With volume removal (deletes the database data)**:
 
    ```sh
-    docker-compose down -v
+    docker compose down -v
    ```
 
 ### API Documentation
