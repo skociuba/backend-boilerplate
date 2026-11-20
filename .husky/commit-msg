@@ -1,5 +1,6 @@
-# WYŁĄCZONY — żeby włączyć, odkomentuj linię z npx.
-# Co robi: przy każdym `git commit` sprawdza wiadomość przez commitlint
-# (reguły w commitlint.config.js, te same co w naming-guard.py).
+# Przy każdym commicie sprawdza wiadomość przez commitlint: Conventional
+# Commits, reguły w commitlint.config.js (te same co w naming-guard.py).
+# release-please buduje z tych wiadomości changelog i numer wersji, więc
+# zły format = commit, którego nie ma w changelogu.
 
-# npx --no -- commitlint --edit "$1"
+npx --no -- commitlint --edit "$1"
