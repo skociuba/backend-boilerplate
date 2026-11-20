@@ -1,0 +1,17 @@
+# Lokalny dodatek do docker-compose.yml (compose łączy oba pliki sam).
+# Wcześniej był w .gitignore, więc po sklonowaniu repo baza nie miała
+# portu na hoście i instrukcja z README nie działała.
+services:
+  db:
+    ports:
+      - "5433:5432"
+
+  # Lokalny inbox na maile wysyłane przez lib/mailer.ts — fałszywy serwer
+  # SMTP + webowy interfejs, bez żadnego konta/logowania. Tylko lokalnie:
+  # docker compose czyta ten plik automatycznie obok docker-compose.yml, a
+  # deploy kopiuje na serwer wyłącznie docker-compose.yml.
+  maildev:
+    image: maildev/maildev
+    ports:
+      - "1080:1080"   # webowy inbox — otwórz http://localhost:1080 w przeglądarce
+      - "1025:1025"   # SMTP, na ten port wskazuje SMTP_HOST/PORT w .env
