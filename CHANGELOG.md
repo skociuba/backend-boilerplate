@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/skociuba/backend-boilerplate/compare/v1.2.2...v1.3.0) (2026-11-20)
+
+
+### Features
+
+* structured request logs and error tracking with sentry ([6f08926](https://github.com/skociuba/backend-boilerplate/commit/6f0892673af62d6b1d7a97ad1aba0de4be3c0814))
+
+
+### Bug Fixes
+
+* **deps:** force the patched effect release pulled in by prisma ([b05a256](https://github.com/skociuba/backend-boilerplate/commit/b05a25607440812419e02a6d1c2eeb9e41a486ed))
+* **deps:** force the patched effect release pulled in by prisma ([0507704](https://github.com/skociuba/backend-boilerplate/commit/050770433c678e8208f669179cbaefcc2821f3f7))
+
 ## [1.2.2](https://github.com/skociuba/backend-boilerplate/compare/v1.2.1...v1.2.2) (2026-11-19)
 
 
