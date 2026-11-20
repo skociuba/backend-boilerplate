@@ -6,6 +6,7 @@ import express from "express";
 import pinoHttp from "pino-http";
 import logger from "./lib/logger";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import userRoutes from "./routes/user.routes";
 import postRoutes from "./routes/post.routes";
 import tagRoutes from "./routes/tag.routes";
@@ -26,6 +27,15 @@ const app = express();
 // nie więcej (ufanie NIEOKREŚLONEJ liczbie hopów pozwoliłoby każdemu
 // podszyć się pod dowolne IP przez nagłówek X-Forwarded-For).
 app.set("trust proxy", 1);
+
+// Nagłówki bezpieczeństwa dla każdej odpowiedzi (także /health i plików z
+// /uploads): nosniff, zakaz osadzania w ramce, restrykcyjna CSP, CORP
+// same-origin — frontend i tak pobiera pliki przez własny /api-proxy, więc
+// dla przeglądarki to ten sam origin. Usuwa też X-Powered-By: Express, które
+// zdradzało, na czym stoi API.
+// HSTS wyłączony tutaj, bo ustawia go nginx dla całej domeny (to on
+// obsługuje HTTPS) — dwa takie same nagłówki z dwóch warstw to bałagan.
+app.use(helmet({ strictTransportSecurity: false }));
 
 ensureUploadDirs();
 
