@@ -72,8 +72,10 @@ npm install
 npm run test
 ```
 
-### Logs and error tracking
+### Monitoring, logs and error tracking
 
+- **Uptime** — [public status page](https://stats.uptimerobot.com/BinXvsm3RH): UptimeRobot checks
+  `/api-node/health` (app and database) and the frontend every 5 minutes and emails on downtime.
 - **Logs** ([src/lib/logger.ts](src/lib/logger.ts)): structured JSON via `pino`, one line per
   request (`pino-http`) with a request ID that is also returned in the `X-Request-Id` response
   header. Auth headers and cookies are redacted, request bodies are never logged. Locally the
