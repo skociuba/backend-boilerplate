@@ -1,32 +1,37 @@
-# WYŁĄCZONY — żeby włączyć, odkomentuj blok niżej (usuń "# " z początku linii).
-# Co robi: przy `git push` blokuje push na master/main, push lokalnego brancha pod inną
-# nazwą zdalną (np. feat/x → master, gdy upstream wskazuje na origin/master) i brancha o złej nazwie.
-# Claude i tak nie pushuje (.claude/hooks/git-guard.py); ten hook jest dla ciebie.
-# Prawdziwą blokadę master daje dopiero ruleset na GitHubie — ten da się obejść --no-verify.
+# Przed wysłaniem na GitHuba: najpierw zasady gitowe (szybkie), potem szybkie
+# testy. Pełne sprawdzenie (E2E, build obrazu, audyt) robi CI — tu chodzi o
+# to, żeby oczywisty błąd wyszedł po kilkunastu sekundach na laptopie, a nie
+# po kilku minutach w PR-ze. Da się obejść (--no-verify); prawdziwą blokadą
+# jest ochrona brancha master na GitHubie.
 
-# . "$(dirname "$0")/branch-name.sh"
-#
-# # git podaje na stdin linie: <local_ref> <local_sha> <remote_ref> <remote_sha>
-# zero=0000000000000000000000000000000000000000
-# while read -r local_ref local_sha remote_ref remote_sha; do
-#   branch=${remote_ref#refs/heads/}
-#   [ "$branch" = "$remote_ref" ] && continue  # tagi itp.
-#
-#   if [ "$branch" = "master" ] || [ "$branch" = "main" ]; then
-#     echo "✖ Push na $branch zablokowany — otwórz PR z brancha feat/... / fix/..."
-#     exit 1
-#   fi
-#
-#   # Usuwanie brancha zdalnego — nazwa nie ma znaczenia.
-#   [ "$local_sha" = "$zero" ] && continue
-#
-#   # Upstream na inny branch = push z IDE (Sync) ląduje gdzie indziej, niż myślisz.
-#   local_branch=${local_ref#refs/heads/}
-#   if [ "$local_branch" != "$local_ref" ] && [ "$local_branch" != "$branch" ]; then
-#     echo "✖ Push $local_branch → $branch zablokowany. Ustaw upstream na tę samą nazwę:"
-#     echo "  git push -u origin $local_branch"
-#     exit 1
-#   fi
-#
-#   check_branch_name "$branch" || exit 1
-# done
+. "$(dirname "$0")/branch-name.sh"
+
+# git podaje na stdin linie: <local_ref> <local_sha> <remote_ref> <remote_sha>
+zero=0000000000000000000000000000000000000000
+while read -r local_ref local_sha remote_ref _remote_sha; do
+  branch=${remote_ref#refs/heads/}
+  [ "$branch" = "$remote_ref" ] && continue # tagi itp.
+
+  if [ "$branch" = "master" ] || [ "$branch" = "main" ]; then
+    echo "✖ Wysyłanie na $branch zablokowane — otwórz PR z brancha feat/... / fix/..."
+    exit 1
+  fi
+
+  # Usuwanie brancha zdalnego — nazwa nie ma znaczenia
+  [ "$local_sha" = "$zero" ] && continue
+
+  # Upstream na inny branch = wysyłka z IDE (Sync) ląduje gdzie indziej, niż myślisz
+  local_branch=${local_ref#refs/heads/}
+  if [ "$local_branch" != "$local_ref" ] && [ "$local_branch" != "$branch" ]; then
+    echo "✖ Wysyłanie $local_branch → $branch zablokowane. Ustaw upstream na tę samą nazwę:"
+    echo "  git push -u origin $local_branch"
+    exit 1
+  fi
+
+  check_branch_name "$branch" || exit 1
+done
+
+# Testy integracyjne (prawdziwy Postgres) zostają w CI — lokalnie wymagałyby
+# osobnego kontenera z bazą
+echo "▶ pre-push: typy i testy jednostkowe (pominięcie: --no-verify)"
+npx tsc --noEmit && npm test --silent

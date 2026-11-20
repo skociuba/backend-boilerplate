@@ -32,8 +32,9 @@ npx prisma generate           # client → src/generated/prisma (gitignored)
   the user sets the upstream on the first push (`git push -u origin <branch>`).
 - Commits: Conventional Commits (`feat: ...`, `fix(auth): [28917] ...`); prefer a lowercase subject.
 - Both checked before the command runs by `.claude/hooks/naming-guard.py` (same rules as the
-  company repo). Husky + commitlint (`.husky/`, `commitlint.config.js`) hold the same rules for
-  manual commits but are commented out for now. Never `--no-verify`.
+  company repo). Husky enforces the same rules for every commit: pre-commit (branch name, no
+  commits on master), commit-msg (commitlint, `commitlint.config.js`), pre-push (branch rules +
+  `tsc` + unit tests). The frontend repo has the same hooks. Never `--no-verify`.
 - Production deploys only from releases (continuous delivery): merging to `master` runs
   `.github/workflows/ci.yml` (test, integration, build → image `:<sha>`), and release-please
   keeps a "chore(master): release X.Y.Z" PR open. Merging THAT PR tags `vX.Y.Z`, retags the image
