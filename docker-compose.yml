@@ -1,3 +1,13 @@
+# Domyślnie Docker trzyma logi kontenera w jednym pliku bez limitu — przy
+# jednej linii JSON na żądanie (pino-http) w końcu zapełniłby dysk, a
+# razem z nim padłaby baza. 3 pliki po 10 MB na kontener, najstarszy
+# kasowany.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:15    # jest gotowy image z dockerhub
@@ -6,6 +16,7 @@ services:
     # unless-stopped, nie always: ręczne `docker compose stop` jest
     # szanowane także po restarcie.
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER}           # wartości czytane z pliku .env (nie commitujemy haseł do repo)
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -32,6 +43,7 @@ services:
     # IMAGE_TAG też trafi w ostatnie wydanie, a nie w ostatni merge.
     image: sebastiankociuba/node-backend:${IMAGE_TAG:-latest}   # obraz z Docker Hub, budowany przez GitHub Actions
     restart: unless-stopped   # jw. przy db
+    logging: *logging
     # .env nie jedzie w obrazie (.dockerignore), a samo ${...} niżej tylko
     # podstawia wartości do TEGO pliku — bez env_file JWT_*, SMTP_* i
     # FRONTEND_URL nie docierają do kontenera i logowanie wywala się na
@@ -42,6 +54,9 @@ services:
       - .env
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"   # db to nazwa serwisu powyżej
+      # Wersja w zgłoszeniach Sentry (src/instrument.ts) = wdrażany obraz.
+      # Sam SENTRY_DSN przychodzi z .env na serwerze.
+      SENTRY_RELEASE: "${IMAGE_TAG:-latest}"
     # lewa: adres:port na hoście/VPS, prawa: port wewnątrz kontenera.
     # 127.0.0.1 = dostęp tylko z samego serwera (nginx, /api-node). Docker
     # sam dopisuje reguły iptables i omija ufw, więc samo "3001:3000"

@@ -25,6 +25,8 @@ import {
 } from "../lib/refreshCookie";
 import { createVerificationToken, consumeVerificationToken } from "../lib/verificationTokens";
 import { sendActivationEmail, sendPasswordResetEmail } from "../lib/mailer";
+import * as Sentry from "@sentry/node";
+import logger from "../lib/logger";
 
 const isUniqueViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -92,7 +94,10 @@ class AuthController {
       const token = await createVerificationToken(user.id, "account_activation");
       await sendActivationEmail(email, token);
     } catch (error) {
-      console.error("Nie udało się wysłać maila aktywacyjnego:", error);
+      // jw. w userController: rejestracja się udała, ale bez maila konta
+      // nie da się aktywować — o tym ma przyjść alert
+      logger.error({ err: error }, "Nie udało się wysłać maila aktywacyjnego");
+      Sentry.captureException(error);
     }
 
     res.status(201).json({

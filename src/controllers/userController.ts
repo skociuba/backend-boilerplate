@@ -3,6 +3,8 @@ import prisma from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { createVerificationToken } from "../lib/verificationTokens";
 import { sendAccountSetupEmail } from "../lib/mailer";
+import * as Sentry from "@sentry/node";
+import logger from "../lib/logger";
 
 // Bez password_hash — ten endpoint (moduł admina) nie ma powodu go znać,
 // a wysyłanie go na front (nawet zahashowanego) to niepotrzebnie
@@ -40,7 +42,10 @@ class UserController {
       const token = await createVerificationToken(user.id, "password_reset");
       await sendAccountSetupEmail(email, token);
     } catch (error) {
-      console.error("Nie udało się wysłać maila z ustawieniem konta:", error);
+      // Konto powstało, ale mail nie wyszedł — do Sentry, bo to znak, że
+      // wysyłka maili w ogóle nie działa (np. wygasłe dane SMTP)
+      logger.error({ err: error }, "Nie udało się wysłać maila z ustawieniem konta");
+      Sentry.captureException(error);
     }
 
     res.status(200).json({ message: "User added successfully", user });
