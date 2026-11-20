@@ -17,6 +17,7 @@ SameSite` cookie. Refresh tokens are single-use (rotated on every refresh) and s
   bcrypt. Email verification and password reset use one-time tokens.
 - **Abuse protection** — rate limits on login, registration and password reset; request bodies
   validated with Zod; one error handler maps Prisma errors to HTTP statuses and never leaks internals.
+  Security headers on every response (helmet; HSTS at nginx).
 - **Migration-first database** — schema changes go through Prisma migrations, applied by the deploy
   _before_ the new version starts.
 - **Tested on two levels** — unit tests with Prisma mocked, and integration tests that run the real
@@ -58,12 +59,13 @@ in the frontend repo.
 | Auth       | JWT (access + rotated refresh tokens), bcrypt, express-rate-limit, Zod        |
 | Email      | Nodemailer over SMTP (MailDev locally)                                        |
 | Testing    | Jest, ts-jest; integration tests against a real database                      |
+| Quality    | ESLint 9 (typescript-eslint), husky + commitlint                              |
 | Delivery   | Docker, GitHub Actions, release-please, Trivy, Docker Hub                     |
 | Operations | nginx, Let's Encrypt, Ansible, age + rclone → Backblaze B2, Sentry, pino logs |
 
 ## Delivery pipeline
 
-1. **Pull request** — `test` (typecheck, unit tests, dependency audit), `integration` (real
+1. **Pull request** — `test` (typecheck, lint, unit tests, dependency audit), `integration` (real
    PostgreSQL) and `build` (production image + Trivy scan). Branch protection requires all three.
 2. **Merge to `master`** — the image is pushed as `:<commit-sha>`. release-please keeps a release PR
    open with the next version and changelog, derived from Conventional Commits.
@@ -74,8 +76,8 @@ in the frontend repo.
 5. **Rollback** — Actions → "Deploy Backend" → run with an older version, or
    [scripts/rollback.sh](scripts/rollback.sh) on the server.
 
-Git hooks (husky) check branch names and commit messages and run the type check and unit tests
-before a push.
+Git hooks (husky) check branch names and commit messages and run lint, the type check and unit
+tests before a push.
 
 ## Operations
 
@@ -128,6 +130,7 @@ reset emails then appear in MailDev at http://localhost:1080. To make an account
 
 ```sh
 npm test                          # unit tests (Prisma mocked), no database needed
+npm run lint                      # ESLint
 npx tsc --noEmit                  # typecheck
 
 # integration tests: real PostgreSQL; the database name must contain "test" (tables get truncated)
