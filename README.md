@@ -72,6 +72,26 @@ npm install
 npm run test
 ```
 
+### Logs and error tracking
+
+- **Logs** ([src/lib/logger.ts](src/lib/logger.ts)): structured JSON via `pino`, one line per
+  request (`pino-http`) with a request ID that is also returned in the `X-Request-Id` response
+  header. Auth headers and cookies are redacted, request bodies are never logged. Locally the
+  output is pretty-printed; `LOG_LEVEL` sets the level. On the server:
+
+  ```sh
+  docker compose logs -f app                      # follow
+  docker compose logs app | grep '"level":50'     # errors only
+  docker compose logs app | grep <request-id>     # one request
+  ```
+
+  Docker keeps at most 3 × 10 MB of logs per container (`docker-compose.yml`).
+
+- **Errors** ([src/instrument.ts](src/instrument.ts)): unexpected errors (HTTP 500, failed emails,
+  uncaught exceptions) go to Sentry, tagged with the deployed version. Expected errors (404,
+  validation, auth) do not. Enabled only when `SENTRY_DSN` is set; cookies, headers and request
+  bodies are not sent.
+
 ### Endpoints
 
 - **API Endpoints**:

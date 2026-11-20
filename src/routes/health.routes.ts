@@ -1,5 +1,6 @@
 import { Router } from "express";
 import prisma from "../db";
+import logger from "../lib/logger";
 
 const healthRoutes = Router();
 
@@ -24,7 +25,7 @@ healthRoutes.get("/health", async (_req, res) => {
     ]);
     res.status(200).json({ status: "ok", database: "up" });
   } catch (error) {
-    console.error("Health check: baza niedostępna:", error);
+    logger.error({ err: error }, "Health check: baza niedostępna");
     res.status(503).json({ status: "error", database: "down" });
   } finally {
     // Docker pyta co kilka sekund — bez tego każdy udany check zostawiałby

@@ -1,7 +1,10 @@
 // Sama konfiguracja aplikacji, bez app.listen — testy integracyjne
 // (src/tests/integration) stawiają ją na losowym porcie obok prawdziwej
 // bazy, a produkcyjny start jest w index.ts.
+import { randomUUID } from "node:crypto";
 import express from "express";
+import pinoHttp from "pino-http";
+import logger from "./lib/logger";
 import cookieParser from "cookie-parser";
 import userRoutes from "./routes/user.routes";
 import postRoutes from "./routes/post.routes";
@@ -29,6 +32,27 @@ ensureUploadDirs();
 // Przed resztą middleware'ów: Docker pyta o /health co kilka sekund, nie ma
 // sensu za każdym razem parsować body, ciastek i tokenu
 app.use(healthRoutes);
+
+// Jedna linia logu na żądanie: metoda, ścieżka, status, czas. Za healthRoutes,
+// żeby nie zalewać logów pytaniami Dockera co kilka sekund.
+app.use(
+  pinoHttp({
+    logger,
+    // ID żądania: z nagłówka X-Request-Id (jeśli ustawi go proxy), inaczej
+    // nowy UUID. Odsyłany w odpowiedzi — użytkownik zgłaszający błąd może
+    // go podać i od razu widać w logach, o które żądanie chodzi.
+    genReqId: (req, res) => {
+      const id = req.headers["x-request-id"]?.toString() || randomUUID();
+      res.setHeader("X-Request-Id", id);
+      return id;
+    },
+    // 5xx jako error, 4xx jako warn — błędy da się odfiltrować po poziomie
+    customLogLevel: (_req, res, error) =>
+      error || res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info",
+    // Tokeny i ciastka sesji nie mogą lądować w logach
+    redact: ["req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]'],
+  })
+);
 
 app.use(express.json());
 // Express 5 zostawia req.body = undefined, gdy żądanie nie ma body albo ma

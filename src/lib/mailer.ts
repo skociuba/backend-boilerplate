@@ -1,4 +1,5 @@
 import nodemailer, { Transporter } from "nodemailer";
+import logger from "./logger";
 
 // JEDYNE miejsce w aplikacji, które wie JAK wysłać maila. Reszta kodu
 // (authController) tylko woła sendActivationEmail/sendPasswordResetEmail —
@@ -29,8 +30,9 @@ const getTransporter = (): Promise<Transporter> => {
       }
 
       const testAccount = await nodemailer.createTestAccount();
-      console.log(
-        `📧 Brak SMTP_HOST — wysyłka maili przez jednorazowe konto testowe Ethereal (user: ${testAccount.user})`
+      logger.info(
+        { etherealUser: testAccount.user },
+        "Brak SMTP_HOST — wysyłka maili przez jednorazowe konto testowe Ethereal"
       );
 
       return nodemailer.createTransport({
@@ -65,14 +67,14 @@ const sendMail = async (to: string, { subject, html, text }: Email): Promise<voi
   // od "nic nie poszło". messageId + odpowiedź serwera wystarczą, żeby
   // znaleźć maila u dostawcy; adresu odbiorcy celowo nie logujemy (dane
   // osobowe w logach).
-  console.log(`📧 Mail wysłany: "${subject}" ${info.messageId} (${info.response})`);
+  logger.info({ subject, messageId: info.messageId, response: info.response }, "Mail wysłany");
 
   // getTestMessageUrl zwraca URL TYLKO dla transportera Etherala — dla
   // prawdziwego dostawcy wraca null, i to jest poprawne (nie ma czego
   // podglądać, mail poszedł realnie).
   const previewUrl = nodemailer.getTestMessageUrl(info);
   if (previewUrl) {
-    console.log(`📧 Podgląd maila (Ethereal): ${previewUrl}`);
+    logger.info({ previewUrl }, "Podgląd maila (Ethereal)");
   }
 };
 

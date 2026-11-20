@@ -4,6 +4,7 @@ import path from "path";
 import multer, { FileFilterCallback } from "multer";
 import { Request } from "express";
 import { BadRequestError } from "./errors";
+import logger from "./logger";
 
 // Katalog NA DYSKU kontenera/maszyny, nie w bazie — baza trzyma tylko
 // ścieżkę (patrz user_profiles.avatar_path/document_path w schema.prisma).
@@ -95,7 +96,7 @@ export const deleteUploadedFile = (absolutePath: string | null | undefined): voi
   if (!absolutePath) return;
   fs.unlink(absolutePath, (error) => {
     if (error && error.code !== "ENOENT") {
-      console.error("Nie udało się usunąć pliku z dysku:", absolutePath, error);
+      logger.warn({ err: error, path: absolutePath }, "Nie udało się usunąć pliku z dysku");
     }
   });
 };

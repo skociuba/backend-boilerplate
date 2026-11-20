@@ -1,7 +1,9 @@
+import * as Sentry from "@sentry/node";
 import { Request, Response, NextFunction } from "express";
 import { MulterError } from "multer";
 import { Prisma } from "../generated/prisma/client";
 import { AppError } from "../lib/errors";
+import logger from "../lib/logger";
 
 // Trasa, której żaden route nie złapał — osobno od errorHandlera, bo to nie
 // jest "błąd" w sensie wyjątku, tylko normalny, końcowy przypadek routingu
@@ -71,6 +73,11 @@ export const errorHandler = (
   // Cokolwiek innego — bug, awaria bazy, literówka — to NIE jest
   // oczekiwany, operacyjny błąd. Logujemy pełny obiekt (stack trace) i
   // oddajemy generyczną wiadomość, żeby nie wyciekły szczegóły implementacji.
-  console.error(error);
+  // req.log (pino-http) dokleja do wpisu ID żądania. Do Sentry trafiają
+  // TYLKO te nieoczekiwane błędy — 404 czy błąd walidacji to normalna
+  // praca aplikacji, nie coś, o czym ma przyjść mail.
+  // req.log nie istnieje, gdy handler wołany jest bez pino-http (testy)
+  (req.log ?? logger).error({ err: error }, "Nieobsłużony błąd");
+  Sentry.captureException(error);
   res.status(500).json({ error: "Wewnętrzny błąd serwera" });
 };
