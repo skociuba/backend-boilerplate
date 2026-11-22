@@ -147,7 +147,8 @@ src/
   index.ts            server start and graceful shutdown
   instrument.ts       Sentry setup
   routes/             route definitions, per resource
-  controllers/        request handlers
+  controllers/        HTTP layer: parse the request, call a service, send the response
+  services/           business logic and Prisma queries, no Express dependency
   middleware/         auth (current user, admin), validation, rate limits, errors
   lib/                JWT, passwords, mailer, uploads, logger, error classes
   tests/              unit tests; tests/integration/ runs against a real database
