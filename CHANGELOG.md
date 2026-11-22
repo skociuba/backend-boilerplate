@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1](https://github.com/skociuba/backend-boilerplate/compare/v1.4.0...v1.4.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ci:** stop a pending deploy approval from blocking releases ([f8e1eb2](https://github.com/skociuba/backend-boilerplate/commit/f8e1eb2066574660234899b3976f46a05554b5d4))
+* **ci:** stop a pending deploy approval from blocking releases ([2b1a40b](https://github.com/skociuba/backend-boilerplate/commit/2b1a40b40f78e362b1b3f9b2b100a0a1a4b94288))
+
 ## [1.4.0](https://github.com/skociuba/backend-boilerplate/compare/v1.3.0...v1.4.0) (2026-11-22)
 
 
