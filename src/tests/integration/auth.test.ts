@@ -1,5 +1,5 @@
 import prisma from "../../db";
-import { sendActivationEmail } from "../../lib/mailer";
+import { sendActivationEmail, sendPasswordResetEmail } from "../../lib/mailer";
 import { api, cookieHeader, createVerifiedUser, resetDatabase, startServer } from "./helpers";
 
 // Jedyny mock w testach integracyjnych: wysyłka maili. To granica systemu
@@ -89,6 +89,48 @@ describe("auth na prawdziwej bazie", () => {
     expect(wrongPassword.status).toBe(401);
     expect(noSuchUser.status).toBe(401);
     expect(wrongPassword.body).toEqual(noSuchUser.body);
+  });
+
+  it("reset hasła: ta sama odpowiedź dla obcego maila, zmiana hasła i koniec starych sesji", async () => {
+    await createVerifiedUser("ala@example.com", "stare-haslo-1");
+    const session = await http.login("ala@example.com", "stare-haslo-1");
+
+    const known = await http.post("/auth/forgot-password", { body: { email: "ala@example.com" } });
+    const unknown = await http.post("/auth/forgot-password", { body: { email: "nikt@example.com" } });
+    expect(known.status).toBe(200);
+    expect(unknown.body).toEqual(known.body);
+    expect(sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+
+    const [, rawToken] = (sendPasswordResetEmail as jest.Mock).mock.calls[0];
+    const reset = await http.post("/auth/reset-password", {
+      body: { token: rawToken, password: "nowe-haslo-12" },
+    });
+    expect(reset.status).toBe(200);
+    // Link jest jednorazowy
+    expect(
+      (await http.post("/auth/reset-password", { body: { token: rawToken, password: "inne-haslo-12" } }))
+        .status
+    ).toBe(400);
+
+    // Sesja sprzed resetu nie da się już odświeżyć
+    expect((await http.post("/auth/refresh", { cookie: cookieHeader(session.cookies) })).status).toBe(
+      401
+    );
+    await expect(http.login("ala@example.com", "stare-haslo-1")).rejects.toThrow("401");
+    await expect(http.login("ala@example.com", "nowe-haslo-12")).resolves.toBeDefined();
+  });
+
+  it("logout-all unieważnia sesje ze wszystkich urządzeń", async () => {
+    await createVerifiedUser("ala@example.com", "haslo-testowe-1");
+    const laptop = await http.login("ala@example.com", "haslo-testowe-1");
+    const phone = await http.login("ala@example.com", "haslo-testowe-1");
+
+    expect((await http.post("/auth/logout-all", { token: laptop.token })).status).toBe(200);
+
+    for (const device of [laptop, phone]) {
+      const res = await http.post("/auth/refresh", { cookie: cookieHeader(device.cookies) });
+      expect(res.status).toBe(401);
+    }
   });
 
   it("zwraca 400 z opisem pól przy złych danych rejestracji", async () => {
