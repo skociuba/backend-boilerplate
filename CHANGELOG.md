@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/skociuba/backend-boilerplate/compare/v1.3.0...v1.4.0) (2026-11-22)
+
+
+### Features
+
+* send security headers with helmet ([9943425](https://github.com/skociuba/backend-boilerplate/commit/9943425d64fbfde968c502ba344e7d3883c0d632))
+* send security headers with helmet ([146e367](https://github.com/skociuba/backend-boilerplate/commit/146e367a57117853a35d6da4f45096264613c10e))
+
 ## [1.3.0](https://github.com/skociuba/backend-boilerplate/compare/v1.2.2...v1.3.0) (2026-11-20)
 
 
