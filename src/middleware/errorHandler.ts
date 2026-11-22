@@ -38,12 +38,12 @@ const fromPrismaError = (error: Prisma.PrismaClientKnownRequestError): AppError 
 // Musi być zarejestrowany jako OSTATNI middleware w index.ts: Express
 // przechodzi tu przez next(error) z dowolnego miejsca wcześniej w łańcuchu
 // (routy przez asyncHandler, middleware jak requireAdmin/validateBody).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// _next: nieużywany, ale musi być — po nim Express rozpoznaje error handler.
 export const errorHandler = (
   error: unknown,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void => {
   if (error instanceof AppError) {
     res.status(error.statusCode).json({
