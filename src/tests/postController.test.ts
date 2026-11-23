@@ -141,9 +141,8 @@ describe("PostController.uploadImage", () => {
   });
 
   it("zapisuje nowe zdjęcie i dopiero potem kasuje poprzednie", async () => {
-    findUnique
-      .mockResolvedValueOnce({ user_id: 7 }) // requireOwnPost
-      .mockResolvedValueOnce({ image_path: "/uploads/posts/old.png" });
+    // Jedno zapytanie: requireOwnPost zwraca od razu poprzedni image_path
+    findUnique.mockResolvedValueOnce({ user_id: 7, image_path: "/uploads/posts/old.png" });
     update.mockResolvedValue({ ...dbPost, image_path: "/uploads/posts/new.png" });
 
     await controller.uploadImage(request(7), res as Response, next);
