@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/skociuba/backend-boilerplate/compare/v1.4.1...v1.4.2) (2026-11-23)
+
+
+### Chores
+
+* release 1.4.2 ([37b67ef](https://github.com/skociuba/backend-boilerplate/commit/37b67efa080c3e6b4777f397f21b832f7883af46))
+
 ## [1.4.1](https://github.com/skociuba/backend-boilerplate/compare/v1.4.0...v1.4.1) (2026-11-22)
 
 
